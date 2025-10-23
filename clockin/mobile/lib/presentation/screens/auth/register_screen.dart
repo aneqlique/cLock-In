@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/services/user_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -9,19 +10,30 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _firstNameCtrl = TextEditingController();
+  final _lastNameCtrl = TextEditingController();
+  final _ageCtrl = TextEditingController();
+  final _contactCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
+  final _addressCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
 
   bool _obscure1 = true;
   bool _obscure2 = true;
   bool _loading = false;
+  String _gender = 'Prefer not to say';
 
   @override
   void dispose() {
+    _firstNameCtrl.dispose();
+    _lastNameCtrl.dispose();
+    _ageCtrl.dispose();
+    _contactCtrl.dispose();
     _emailCtrl.dispose();
     _usernameCtrl.dispose();
+    _addressCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     super.dispose();
@@ -30,10 +42,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _onRegister() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
-    setState(() => _loading = false);
-    Navigator.pushReplacementNamed(context, '/home');
+    try {
+      final userService = UserService();
+      final data = await userService.registerUser(
+        firstName: _firstNameCtrl.text,
+        lastName: _lastNameCtrl.text,
+        age: _ageCtrl.text,
+        gender: _gender,
+        contactNumber: _contactCtrl.text,
+        email: _emailCtrl.text,
+        username: _usernameCtrl.text,
+        address: _addressCtrl.text,
+        password: _passwordCtrl.text,
+      );
+      await userService.saveUserData(data);
+      if (!mounted) return;
+      setState(() => _loading = false);
+      Navigator.pushReplacementNamed(context, '/home');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
   }
 
   @override
@@ -86,6 +118,81 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     key: _formKey,
                     child: Column(
                       children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: _firstNameCtrl,
+                                textInputAction: TextInputAction.next,
+                                decoration: const InputDecoration(
+                                  labelText: 'First name',
+                                  prefixIcon: Icon(Icons.badge_rounded),
+                                ),
+                                validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextFormField(
+                                controller: _lastNameCtrl,
+                                textInputAction: TextInputAction.next,
+                                decoration: const InputDecoration(
+                                  labelText: 'Last name',
+                                  prefixIcon: Icon(Icons.badge_outlined),
+                                ),
+                                validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: _ageCtrl,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  labelText: 'Age',
+                                  prefixIcon: Icon(Icons.cake_rounded),
+                                ),
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) return 'Required';
+                                  final n = int.tryParse(v);
+                                  if (n == null || n <= 0) return 'Invalid age';
+                                  return null;
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                value: _gender,
+                                items: const [
+                                  DropdownMenuItem(value: 'Male', child: Text('Male')),
+                                  DropdownMenuItem(value: 'Female', child: Text('Female')),
+                                  DropdownMenuItem(value: 'Prefer not to say', child: Text('Prefer not to say')),
+                                ],
+                                onChanged: (v) => setState(() => _gender = v ?? _gender),
+                                decoration: const InputDecoration(
+                                  labelText: 'Gender',
+                                  prefixIcon: Icon(Icons.wc_rounded),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: _contactCtrl,
+                          keyboardType: TextInputType.phone,
+                          decoration: const InputDecoration(
+                            labelText: 'Contact number',
+                            prefixIcon: Icon(Icons.call_rounded),
+                          ),
+                          validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                        ),
+                        const SizedBox(height: 14),
                         TextFormField(
                           controller: _emailCtrl,
                           keyboardType: TextInputType.emailAddress,
@@ -114,6 +221,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             if (v.trim().length < 3) return 'Min 3 characters';
                             return null;
                           },
+                        ),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: _addressCtrl,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'Address',
+                            prefixIcon: Icon(Icons.location_on_outlined),
+                          ),
+                          validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
                         ),
                         const SizedBox(height: 14),
                         TextFormField(

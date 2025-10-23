@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/services/user_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -24,10 +25,20 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _onLogin() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    setState(() => _loading = false);
-    Navigator.pushReplacementNamed(context, '/home');
+    try {
+      final userService = UserService();
+      final data = await userService.loginUser(_emailCtrl.text, _passwordCtrl.text);
+      await userService.saveUserData(data);
+      if (!mounted) return;
+      setState(() => _loading = false);
+      Navigator.pushReplacementNamed(context, '/home');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
   }
 
   @override
