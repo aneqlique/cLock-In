@@ -1,0 +1,92 @@
+# ===============================
+#  FLUTTER / DART
+# ===============================
+.dart_tool/
+.packages
+.pub/
+build/
+ios/Flutter/Flutter.framework/
+ios/.symlinks/
+ios/Pods/
+macos/Pods/
+macos/Flutter/ephemeral/
+windows/flutter/
+linux/flutter/
+flutter_export_environment.sh
+Generated.xcconfig
+flutter_*.png
+app.*.symbols
+
+# Flutter plugin-specific
+*.iml
+*.lock
+pubspec.lock
+coverage/
+coverage_report/
+*.g.dart
+*.freezed.dart
+
+# IDE
+.idea/
+.vscode/
+*.log
+*.tmp
+*.swp
+*.DS_Store
+
+# ===============================
+#  ENVIRONMENTS / KEYS
+# ===============================
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+*.key
+*.pem
+*.p12
+*.jks
+*.keystore
+
+# ===============================
+#  CLOUDINARY & CONFIG FILES
+# ===============================
+cloudinary_config.json
+credentials.json
+firebase_options.dart
+google-services.json
+GoogleService-Info.plist
+
+# ===============================
+#  NODE / EXPRESS BACKEND
+# ===============================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+build/
+.env.*
+package-lock.json
+
+# ===============================
+#  OS FILES
+# ===============================
+Thumbs.db
+.DS_Store
+ehthumbs.db
+Icon?
+Desktop.ini
+
+# ===============================
+#  DATABASE / LOCAL DATA
+# ===============================
+*.db
+*.sqlite
+*.realm
+data/
+tmp/
+cache/
+hive/
+sqflite/
+assets/temp/
