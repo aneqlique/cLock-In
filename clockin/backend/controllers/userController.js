@@ -58,16 +58,17 @@ const deleteUser = async (req, res) => {
 
 const loginUser = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    // const { email, password } = req.body;
+    const { username, password } = req.body;
 
-    // Find the user by email
-    const user = await User.findOne({ email });
+    // Find the user by username
+    const user = await User.findOne({ username });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
     // Check if the user is active
-    if (!user.isActive) {
+    if (user.isActive === false) {
       return res.status(403).json({ message: 'Your account is inactive. Please contact support.' });
     }
 
@@ -79,9 +80,10 @@ const loginUser = async (req, res) => {
 
     // Generate a JWT token
     const token = jwt.sign(
-      { id: user._id, email: user.email, type: user.type },
+      // { id: user._id, user: user.email, type: user.type },
+      { id: user._id, user: user.username, type: user.type },
       process.env.JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '7d' }
     );
 
     res.json({
