@@ -4,6 +4,7 @@ import 'package:clockin/presentation/screens/diary/diarytl_screen.dart';
 import 'package:clockin/presentation/screens/settings/settings_screen.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'dart:math' as math;
+import 'package:flutter/services.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -41,57 +42,75 @@ class _HomeScreen extends State<HomeScreen> {
     return -1;
   }
 
-  List<PieChartSectionData> _sections(Color borderColor) {
+  List<PieChartSectionData> _sections(Color borderColor, double radius) {
     if (_tasks.isEmpty) {
       return [
         PieChartSectionData(
           value: 1,
           color: const Color(0xFF2B2B2B),
           title: '',
-          radius: 110,
-          borderSide: BorderSide(color: borderColor, width: 1),
+          radius: radius,
+          borderSide: const BorderSide(color: Colors.transparent, width: 0),
         )
       ];
     }
-    const totalMinutes = 1440; // 24 hours
+    const totalMinutes = 1440;
     final ci = _currentTaskIndex();
-    final sorted = [..._tasks]
-      ..sort((a, b) => _minutesSinceMidnight(a.start).compareTo(_minutesSinceMidnight(b.start)));
-    final sections = <PieChartSectionData>[];
-    var cursor = 0.0; // minutes accumulated
-    for (var i = 0; i < sorted.length; i++) {
-      final t = sorted[i];
+
+    final segs = <_ChartSeg>[];
+    for (final t in _tasks) {
+      final isCurrent = _tasks.indexOf(t) == ci;
       final startMin = _minutesSinceMidnight(t.start).toDouble();
-      final double gap = ((startMin - cursor).clamp(0.0, totalMinutes.toDouble())).toDouble();
+      final endMin = _minutesSinceMidnight(t.end).toDouble();
+      final clr = isCurrent ? const Color(0xFF3A3A3A) : Colors.transparent;
+      if (t.end.day != t.start.day) {
+        final dur = t.durationMinutes.toDouble();
+        final midAbs = (startMin + dur / 2) % totalMinutes;
+        final firstDur = (totalMinutes - startMin);
+        final secondDur = endMin;
+        final midInFirst = midAbs >= startMin;
+        segs.add(_ChartSeg(start: startMin, duration: firstDur, color: clr, title: midInFirst ? t.title : ''));
+        if (secondDur > 0) {
+          segs.add(_ChartSeg(start: 0, duration: secondDur, color: clr, title: midInFirst ? '' : t.title));
+        }
+      } else {
+        final dur = t.durationMinutes.toDouble();
+        segs.add(_ChartSeg(start: startMin, duration: dur, color: clr, title: t.title));
+      }
+    }
+    segs.sort((a, b) => a.start.compareTo(b.start));
+
+    final sections = <PieChartSectionData>[];
+    var cursor = 0.0;
+    for (final s in segs) {
+      final gap = ((s.start - cursor).clamp(0.0, totalMinutes.toDouble())).toDouble();
       if (gap > 0.0) {
         sections.add(PieChartSectionData(
           value: gap,
-          color: const Color(0xFF151515),
+          color: Colors.transparent,
           title: '',
-          radius: 110,
-          borderSide: BorderSide(color: borderColor, width: 1),
+          radius: radius,
+          borderSide: const BorderSide(color: Colors.transparent, width: 0),
         ));
         cursor += gap;
       }
-      final isCurrent = _tasks.indexOf(t) == ci;
-      final double dur = t.durationMinutes.toDouble();
       sections.add(PieChartSectionData(
-        value: dur,
-        color: isCurrent ? const Color(0xFF3A3A3A) : t.color,
-        title: t.title,
+        value: s.duration,
+        color: s.color,
+        title: s.title,
         titleStyle: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w600),
-        radius: 110,
-        borderSide: BorderSide(color: borderColor, width: 1),
+        radius: radius,
+        borderSide: const BorderSide(color: Colors.transparent, width: 0),
       ));
-      cursor += dur;
+      cursor += s.duration;
     }
     if (cursor < totalMinutes.toDouble()) {
       sections.add(PieChartSectionData(
         value: (totalMinutes.toDouble() - cursor),
-        color: const Color(0xFF151515),
+        color: Colors.transparent,
         title: '',
-        radius: 110,
-        borderSide: BorderSide(color: borderColor, width: 1),
+        radius: radius,
+        borderSide: const BorderSide(color: Colors.transparent, width: 0),
       ));
     }
     return sections;
@@ -157,10 +176,15 @@ class _HomeScreen extends State<HomeScreen> {
                   Expanded(
                     child: TextField(
                       controller: startCtrl,
-                      keyboardType: TextInputType.datetime,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        LengthLimitingTextInputFormatter(5),
+                        _HhMmFormatter(),
+                      ],
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
                         labelText: 'Start (HH:mm)',
+                        hintText: 'HH:mm',
                         helperText: '24-hour format',
                         helperStyle: const TextStyle(color: Colors.white38),
                         labelStyle: const TextStyle(color: Colors.white70),
@@ -175,10 +199,15 @@ class _HomeScreen extends State<HomeScreen> {
                   Expanded(
                     child: TextField(
                       controller: endCtrl,
-                      keyboardType: TextInputType.datetime,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        LengthLimitingTextInputFormatter(5),
+                        _HhMmFormatter(),
+                      ],
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
                         labelText: 'End (HH:mm)',
+                        hintText: 'HH:mm',
                         helperText: '24-hour format',
                         helperStyle: const TextStyle(color: Colors.white38),
                         labelStyle: const TextStyle(color: Colors.white70),
@@ -208,22 +237,22 @@ class _HomeScreen extends State<HomeScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
                       final title = titleCtrl.text.trim();
                       final s = _parse24ToDateToday(startCtrl.text.trim());
-                      final e = _parse24ToDateToday(endCtrl.text.trim());
-                      if (title.isEmpty || s == null || e == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter title and valid HH:mm start/end')));
+                      final endParsed = _parse24ToDateToday(endCtrl.text.trim());
+                      if (title.isEmpty || s == null || endParsed == null) {
+                        await showDialog(context: context, builder: (_) => AlertDialog(title: const Text('Invalid Input'), content: const Text('Enter title and valid HH:mm start/end'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))]));
                         return;
+                      }
+                      DateTime e = endParsed;
+                      if (!e.isAfter(s)) {
+                        e = e.add(const Duration(days: 1));
                       }
                       final color = _categoryColor(category);
-                      if (!e.isAfter(s)) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('End time must be after start time')));
-                        return;
-                      }
                       final hasOverlap = _tasks.any((t) => s.isBefore(t.end) && e.isAfter(t.start));
                       if (hasOverlap) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selected time overlaps with another task')));
+                        await showDialog(context: context, builder: (_) => AlertDialog(title: const Text('Overlap Detected'), content: const Text('Selected time overlaps with another task'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))]));
                         return;
                       }
                       Navigator.pop(ctx, _Task(title: title, category: category, description: descCtrl.text.trim(), color: color, start: s, end: e));
@@ -266,7 +295,7 @@ class _HomeScreen extends State<HomeScreen> {
           Icon(Icons.person, size: 30, color: Colors.white),
         ];
     return Scaffold(
-      extendBody: true,
+      // extendBody: true,
       body: index == 1
           ? _buildClockTab(context)
           : pages[index],
@@ -307,43 +336,65 @@ class _HomeScreen extends State<HomeScreen> {
             style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 12),
-          SizedBox(
-            height: 280,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFF151515),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(.15), blurRadius: 10, spreadRadius: 2)],
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: PieChart(
-                      PieChartData(
-                        sections: _sections(borderColor),
-                        startDegreeOffset: -90,
-                        sectionsSpace: 0,
-                        centerSpaceRadius: 16,
+          LayoutBuilder(
+            builder: (ctx, constraints) {
+              final shortest = math.min(constraints.maxWidth, MediaQuery.of(context).size.height * 0.9);
+              final size = shortest * 0.62;
+              final pieRadius = (size / 2) - 8;
+              return Center(
+                child: SizedBox(
+                  width: size,
+                  height: size,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFF151515),
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(.15), blurRadius: 10, spreadRadius: 2)],
+                        ),
+                        child: PieChart(
+                          PieChartData(
+                            sections: _sections(borderColor, pieRadius),
+                            startDegreeOffset: -90,
+                            sectionsSpace: 0,
+                            centerSpaceRadius: 0,
+                          ),
+                        ),
                       ),
-                    ),
+                      Positioned.fill(child: _ClockOverlay()),
+                    ],
                   ),
                 ),
-                Positioned.fill(child: _ClockOverlay()),
-              ],
-            ),
+              );
+            },
           ),
           const SizedBox(height: 12),
           if (currentIdx >= 0) _currentTaskChip(_tasks[currentIdx]) else const SizedBox(),
           const SizedBox(height: 8),
           Expanded(
             child: ListView.separated(
-              itemCount: _tasks.length,
+              itemCount: ([..._tasks]
+                    ..sort((a, b) {
+                      final aWrap = a.end.day != a.start.day;
+                      final bWrap = b.end.day != b.start.day;
+                      if (aWrap != bWrap) return aWrap ? 1 : -1;
+                      return _minutesSinceMidnight(a.start).compareTo(_minutesSinceMidnight(b.start));
+                    }))
+                  .length,
               separatorBuilder: (_, __) => const SizedBox(height: 10),
               itemBuilder: (ctx, i) {
-                final t = _tasks[i];
-                final isCurrent = i == currentIdx;
+                final sorted = [..._tasks]
+                  ..sort((a, b) {
+                    final aWrap = a.end.day != a.start.day;
+                    final bWrap = b.end.day != b.start.day;
+                    if (aWrap != bWrap) return aWrap ? 1 : -1;
+                    return _minutesSinceMidnight(a.start).compareTo(_minutesSinceMidnight(b.start));
+                  });
+                final t = sorted[i];
+                final tCurrent = currentIdx >= 0 ? _tasks[currentIdx] : null;
+                final isCurrent = tCurrent != null && identical(t, tCurrent);
                 return Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -449,6 +500,32 @@ class _Task {
   _Task({required this.title, required this.category, required this.description, required this.color, required this.start, required this.end});
 }
 
+class _ChartSeg {
+  final double start;
+  final double duration;
+  final Color color;
+  final String title;
+  _ChartSeg({required this.start, required this.duration, required this.color, required this.title});
+}
+
+class _HhMmFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    String out = digits;
+    if (digits.length >= 3) {
+      out = digits.substring(0, 2) + ':' + digits.substring(2, digits.length > 4 ? 4 : digits.length);
+    }
+    if (digits.length <= 2) {
+      out = digits;
+    }
+    return TextEditingValue(
+      text: out,
+      selection: TextSelection.collapsed(offset: out.length),
+    );
+  }
+}
+
 class _ClockOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -494,22 +571,15 @@ class _ClockPainter extends CustomPainter {
     }
 
     final now = DateTime.now();
-    final minuteAngle = (now.minute / 60) * 2 * math.pi - math.pi / 2;
     final hourAngle = (((now.hour % 24) * 60 + now.minute) / 1440) * 2 * math.pi - math.pi / 2;
 
-    final minutePaint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
     final hourPaint = Paint()
       ..color = Colors.white
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
 
-    final minuteEnd = center + Offset(math.cos(minuteAngle) * (radius - 26), math.sin(minuteAngle) * (radius - 26));
     final hourEnd = center + Offset(math.cos(hourAngle) * (radius - 40), math.sin(hourAngle) * (radius - 40));
     canvas.drawLine(center, hourEnd, hourPaint);
-    canvas.drawLine(center, minuteEnd, minutePaint);
 
     final hub = Paint()..color = Colors.white;
     canvas.drawCircle(center, 3, hub);
