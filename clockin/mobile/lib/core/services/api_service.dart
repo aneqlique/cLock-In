@@ -9,6 +9,9 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getTasks(String token) async {
+    if (token.isEmpty) {
+      throw Exception('Failed to fetch tasks: missing token (not logged in)');
+    }
     final res = await http.get(
       Uri.parse('$_baseUrl/tasks'),
       headers: {
@@ -24,11 +27,15 @@ class ApiService {
       if (decoded is List) return decoded;
       return [];
     } else {
-      throw Exception('Failed to fetch tasks: ${res.statusCode}');
+      final body = res.body.isNotEmpty ? res.body : '<empty body>';
+      throw Exception('Failed to fetch tasks: ${res.statusCode} $body');
     }
   }
 
   static Future<Map<String, dynamic>> createTask(String token, Map<String, dynamic> taskData) async {
+    if (token.isEmpty) {
+      throw Exception('Failed to create task: missing token (not logged in)');
+    }
     final res = await http.post(
       Uri.parse('$_baseUrl/tasks'),
       headers: {
@@ -41,11 +48,15 @@ class ApiService {
       final decoded = jsonDecode(res.body);
       return (decoded is Map) ? decoded.cast<String, dynamic>() : {'data': decoded};
     } else {
-      throw Exception('Failed to create task: ${res.statusCode}');
+      final body = res.body.isNotEmpty ? res.body : '<empty body>';
+      throw Exception('Failed to create task: ${res.statusCode} $body');
     }
   }
 
   static Future<Map<String, dynamic>> updateTask(String token, String id, Map<String, dynamic> updates) async {
+    if (token.isEmpty) {
+      throw Exception('Failed to update task: missing token (not logged in)');
+    }
     final res = await http.put(
       Uri.parse('$_baseUrl/tasks/$id'),
       headers: {
@@ -58,11 +69,15 @@ class ApiService {
       final decoded = jsonDecode(res.body);
       return (decoded is Map) ? decoded.cast<String, dynamic>() : {'data': decoded};
     } else {
-      throw Exception('Failed to update task: ${res.statusCode}');
+      final body = res.body.isNotEmpty ? res.body : '<empty body>';
+      throw Exception('Failed to update task: ${res.statusCode} $body');
     }
   }
 
   static Future<void> deleteTask(String token, String id) async {
+    if (token.isEmpty) {
+      throw Exception('Failed to delete task: missing token (not logged in)');
+    }
     final res = await http.delete(
       Uri.parse('$_baseUrl/tasks/$id'),
       headers: {
@@ -70,7 +85,8 @@ class ApiService {
       },
     );
     if (res.statusCode != 200) {
-      throw Exception('Failed to delete task: ${res.statusCode}');
+      final body = res.body.isNotEmpty ? res.body : '<empty body>';
+      throw Exception('Failed to delete task: ${res.statusCode} $body');
     }
   }
 }

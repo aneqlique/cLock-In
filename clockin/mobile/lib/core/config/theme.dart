@@ -11,21 +11,21 @@ class AppTheme {
   static final ColorScheme _lightScheme = const ColorScheme(
     brightness: Brightness.light,
     primary: _navy,
-    onPrimary: Colors.white,
+    onPrimary: Color(0xFFEAE6E0),
     secondary: _steel,
     onSecondary: Colors.white,
     tertiary: _sand,
     onTertiary: _ink,
     error: Colors.red,
     onError: Colors.white,
-    surface: _cream,
+    surface: Color(0xFFEAE6E0),
     onSurface: _ink,
   );
 
   static final ColorScheme _darkScheme = const ColorScheme(
     brightness: Brightness.dark,
     primary: _steel,
-    onPrimary: Colors.white,
+    onPrimary: Color(0xFFEAE6E0),
     secondary: _navy,
     onSecondary: Colors.white,
     tertiary: _sand,
@@ -39,7 +39,7 @@ class AppTheme {
   static final lightTheme = ThemeData(
     useMaterial3: true,
     colorScheme: _lightScheme,
-    scaffoldBackgroundColor: _cream,
+    scaffoldBackgroundColor: Color(0xFFEAE6E0),
     textTheme: GoogleFonts.fustatTextTheme().apply(
       bodyColor: _ink,
       displayColor: _ink,

@@ -71,7 +71,22 @@ class UserService {
     // Some APIs wrap the user in { user: {..}, token: '...' }
     final user = (userData['user'] is Map) ? (userData['user'] as Map).cast<String, dynamic>() : userData;
 
-    await prefs.setString('token', (userData['token'] ?? user['token'] ?? '').toString());
+    // Try multiple common token keys
+    final possibleToken = (
+      userData['token'] ??
+      user['token'] ??
+      userData['accessToken'] ??
+      user['accessToken'] ??
+      userData['access_token'] ??
+      user['access_token'] ??
+      userData['jwt'] ??
+      user['jwt'] ??
+      userData['authorization'] ??
+      user['authorization'] ??
+      ''
+    ).toString();
+    await prefs.setString('token', possibleToken);
+
     // IDs can be returned as _id or id
     final dynamicId = (user['_id'] ?? user['id'] ?? '').toString();
     await prefs.setString('id', dynamicId);

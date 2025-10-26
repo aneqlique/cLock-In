@@ -360,17 +360,18 @@ class _HomeScreen extends State<HomeScreen> {
   }
 
   void _openAddTask() async {
+    // Persist controllers across rebuilds of the bottom sheet to prevent clearing values
+    final titleCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final startCtrl = TextEditingController();
+    final endCtrl = TextEditingController();
+    String category = 'School';
     final res = await showModalBottomSheet<_Task>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.black,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) {
-        final titleCtrl = TextEditingController();
-        final descCtrl = TextEditingController();
-        final startCtrl = TextEditingController();
-        final endCtrl = TextEditingController();
-        String category = 'School';
         return Padding(
           padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: SingleChildScrollView(
@@ -521,10 +522,33 @@ class _HomeScreen extends State<HomeScreen> {
                         e = e.add(const Duration(days: 1));
                       }
                       final color = _categoryColor(category);
-                      final hasOverlap = _tasks.any((t) => sdt.isBefore(t.end) && e.isAfter(t.start));
-                      if (hasOverlap) {
-                        await showDialog(context: context, builder: (_) => AlertDialog(title: const Text('Overlap Detected'), content: const Text('The selected time overlaps with another task'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))]));
-                        return;
+                      final overlaps = _tasks.where((t) => sdt.isBefore(t.end) && e.isAfter(t.start)).toList();
+                      if (overlaps.isNotEmpty) {
+                        final hasPending = overlaps.any((t) => t.status != 'completed');
+                        if (hasPending) {
+                          await showDialog(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              title: const Text('Overlap Detected'),
+                              content: const Text('The selected time overlaps with an active task. Please pick a different time.'),
+                              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+                            ),
+                          );
+                          return;
+                        }
+                        final hasCompletedVisible = overlaps.any((t) => t.status == 'completed' && !_hidden.contains(_taskKey(t)));
+                        if (hasCompletedVisible) {
+                          await showDialog(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              title: const Text('Completed Task Visible'),
+                              content: const Text('This time range overlaps with a completed task that is still shown. Please hide the completed task before creating a new one in this time range.'),
+                              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+                            ),
+                          );
+                          return;
+                        }
+                        // All overlapping tasks are completed and hidden -> allow
                       }
                       Navigator.pop(ctx, _Task(title: title, category: category, description: descCtrl.text.trim(), color: color, start: sdt, end: e, status: 'pending'));
                     },
@@ -719,8 +743,9 @@ class _HomeScreen extends State<HomeScreen> {
           const SizedBox(height: 12),
           LayoutBuilder(
             builder: (ctx, constraints) {
-              final shortest = math.min(constraints.maxWidth, MediaQuery.of(context).size.height * 0.9);
-              final size = shortest * 0.56;
+              final screenHeight = MediaQuery.of(context).size.height;
+              final halfHeight = screenHeight * 0.37; // nearly half screen
+              final size = math.min(constraints.maxWidth, halfHeight);
               final pieRadius = (size / 2) - 8;
               return Center(
                 child: SizedBox(
@@ -1008,7 +1033,7 @@ class _ClockPainter extends CustomPainter {
       final showLabel = true;
       if (showLabel) {
         final tp = TextPainter(
-          text: TextSpan(text: hour.toString(), style: const TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.w700)),
+          text: TextSpan(text: hour.toString(), style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w700)),
           textDirection: TextDirection.ltr,
         )..layout();
         final labelPos = center + Offset(math.cos(angle) * (radius - 30), math.sin(angle) * (radius - 30));

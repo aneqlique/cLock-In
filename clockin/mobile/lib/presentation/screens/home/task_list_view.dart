@@ -104,7 +104,7 @@ class _TaskListViewState extends State<TaskListView> {
             height: 40,
             decoration: BoxDecoration(
                 // color: _searchFocus.hasFocus ? Color(0xFFEAE6E0) : const Color(0xFFF2F2F2), 
-                color: Colors.white,// 👌 flat transparent background
+                color: Color(0xFFF6F6F6),// 👌 flat transparent background
                 borderRadius: BorderRadius.circular(20),
                 // border: _searchFocus.hasFocus
                 //     ? Border.all(color: Colors.black.withOpacity(0.15)) // subtle border on focus
@@ -123,7 +123,7 @@ class _TaskListViewState extends State<TaskListView> {
                     onChanged: (v) => setState(() => _query = v.trim()),
                     onSubmitted: (_) => _searchFocus.unfocus(),
                     decoration: const InputDecoration(
-                        fillColor: Colors.white,
+                        fillColor: Color(0xFFF6F6F6),
                         hintText: 'Search',
                         hintStyle: TextStyle(color: Colors.black45),
                         isDense: true,
@@ -278,253 +278,23 @@ class _TaskListViewState extends State<TaskListView> {
   }
 
   Future<void> _openTaskModal(Map<String, dynamic> m) async {
-    final id = (m['_id'] ?? m['id'] ?? '').toString();
-    final title = (m['taskTitle'] ?? '').toString();
-    final category = (m['category'] ?? 'self').toString();
-    final timeRange = (m['timeRange'] ?? '').toString();
-    final description = (m['description'] ?? '').toString();
-
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        bool editable = false;
-        String titleLocal = title;
-        String descLocal = description;
-        String timeRangeLocal = timeRange;
-        String cat = category;
-        final parts = timeRangeLocal.split('-');
-        final titleCtrl = TextEditingController(text: titleLocal);
-        final descCtrl = TextEditingController(text: descLocal);
-        final startCtrl = TextEditingController(text: parts.isNotEmpty ? parts[0].trim() : '');
-        final endCtrl = TextEditingController(text: parts.length > 1 ? parts[1].trim() : '');
-        bool setPublic = false;
-
-        return StatefulBuilder(
-          builder: (ctx, setSheet) {
-            final media = MediaQuery.of(ctx);
-            return SafeArea(
-              child: AnimatedPadding(
-                duration: const Duration(milliseconds: 180),
-                padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: media.size.width * 0.94,
-                      maxHeight: media.size.height * 0.9,
-                    ),
-                    child: Material(
-                      color: const Color(0xFF1E1E1E),
-                      borderRadius: BorderRadius.circular(24),
-                      clipBehavior: Clip.antiAlias,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Header actions (Back on left, actions on right)
-                            Row(
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.arrow_back, color: Colors.white70),
-                                  onPressed: () => Navigator.pop(context),
-                                  tooltip: 'Back',
-                                ),
-                                const Spacer(),
-                                IconButton(
-                                  icon: Icon(editable ? Icons.check : Icons.edit, color: Colors.white70),
-                                  onPressed: () async {
-                                    if (!editable) {
-                                      setSheet(() => editable = true);
-                                      return;
-                                    }
-                                    try {
-                                      final prefs = await SharedPreferences.getInstance();
-                                      final token = prefs.getString('token') ?? '';
-                                      final updates = {
-                                        'taskTitle': titleCtrl.text.trim(),
-                                        'category': cat,
-                                        'timeRange': '${startCtrl.text.trim()}-${endCtrl.text.trim()}',
-                                        'description': descCtrl.text.trim(),
-                                      };
-                                      final updated = await ApiService.updateTask(token, id, updates);
-                                      setState(() {
-                                        final idx = _completed.indexWhere((x) => (x['_id'] ?? x['id']).toString() == id);
-                                        if (idx >= 0) _completed[idx] = updated.cast<String, dynamic>();
-                                      });
-                                      setSheet(() {
-                                        titleLocal = titleCtrl.text.trim();
-                                        descLocal = descCtrl.text.trim();
-                                        timeRangeLocal = '${startCtrl.text.trim()}-${endCtrl.text.trim()}';
-                                        editable = false;
-                                      });
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Task updated')));
-                                      }
-                                    } catch (e) {
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Update failed: ${e.toString()}')));
-                                      }
-                                    }
-                                  },
-                                  tooltip: editable ? 'Save' : 'Edit',
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.white70),
-                                  onPressed: () async {
-                                    final confirm = await showDialog<bool>(
-                                      context: context,
-                                      builder: (dctx) => Theme(
-                                        data: Theme.of(dctx).copyWith(
-                                          colorScheme: const ColorScheme.dark(
-                                            primary: Colors.white,
-                                            secondary: Colors.white,
-                                            surface: Color(0xFF1E1E1E),
-                                            onSurface: Colors.white,
-                                          ),
-                                        ),
-                                        child: AlertDialog(
-                                          backgroundColor: const Color(0xFF1E1E1E),
-                                          titleTextStyle: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
-                                          contentTextStyle: const TextStyle(color: Colors.white70),
-                                          title: const Text('Delete task?'),
-                                          content: const Text('This action cannot be undone.'),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () => Navigator.pop(dctx, false),
-                                              style: TextButton.styleFrom(foregroundColor: Colors.white70),
-                                              child: const Text('Cancel'),
-                                            ),
-                                            TextButton(
-                                              onPressed: () => Navigator.pop(dctx, true),
-                                              style: TextButton.styleFrom(foregroundColor: Colors.white),
-                                              child: const Text('Delete'),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                    if (confirm == true) {
-                                      await _delete(id);
-                                      if (mounted) Navigator.pop(context);
-                                    }
-                                  },
-                                  tooltip: 'Delete',
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            // Title
-                            editable
-                                ? TextField(
-                                    controller: titleCtrl,
-                                    style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
-                                    decoration: _dec('Title'),
-                                  )
-                                : Text(titleLocal, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 20)),
-                            const SizedBox(height: 6),
-                            // Category
-                            editable
-                                ? DropdownButtonFormField<String>(
-                                    value: cat,
-                                    items: const [
-                                      DropdownMenuItem(value: 'school', child: Text('School')),
-                                      DropdownMenuItem(value: 'work', child: Text('Work')),
-                                      DropdownMenuItem(value: 'self', child: Text('Self')),
-                                      DropdownMenuItem(value: 'house', child: Text('House')),
-                                    ],
-                                    onChanged: (v) => setSheet(() => cat = v ?? cat),
-                                    dropdownColor: Colors.black,
-                                    style: const TextStyle(color: Colors.white),
-                                    decoration: _dec('Category'),
-                                  )
-                                : Text(_toTitleCase(cat), style: const TextStyle(color: Colors.white70, fontStyle: FontStyle.italic)),
-                            const SizedBox(height: 8),
-                            // Time range
-                            editable
-                                ? Row(
-                                    children: [
-                                      Expanded(child: TextField(controller: startCtrl, style: const TextStyle(color: Colors.white), decoration: _dec('Start (HH:mm)'))),
-                                      const SizedBox(width: 12),
-                                      Expanded(child: TextField(controller: endCtrl, style: const TextStyle(color: Colors.white), decoration: _dec('End (HH:mm)'))),
-                                    ],
-                                  )
-                                : Text(timeRangeLocal, style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w600)),
-                            const SizedBox(height: 10),
-                            // Scrollable middle
-                            Expanded(
-                              child: SingleChildScrollView(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    editable
-                                        ? TextField(controller: descCtrl, maxLines: 6, style: const TextStyle(color: Colors.white), decoration: _dec('Description'))
-                                        : Text(descLocal, style: const TextStyle(color: Colors.white70)),
-                                    const SizedBox(height: 16),
-                                    GridView.builder(
-                                      itemCount: 3,
-                                      shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
-                                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount: 2,
-                                        mainAxisSpacing: 12,
-                                        crossAxisSpacing: 12,
-                                        childAspectRatio: 1.3,
-                                      ),
-                                      itemBuilder: (_, i) => Container(
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF4A4A4A),
-                                          borderRadius: BorderRadius.circular(16),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            // Bottom actions
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Row(
-                                  children: [
-                                    Theme(
-                                      data: Theme.of(context).copyWith(
-                                        switchTheme: const SwitchThemeData(
-                                          thumbColor: MaterialStatePropertyAll(Colors.black),
-                                          trackColor: MaterialStatePropertyAll(Color(0xFFCCCCCC)),
-                                        ),
-                                      ),
-                                      child: Switch(
-                                        value: setPublic,
-                                        onChanged: (v) => setSheet(() => setPublic = v),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    const Text('Set as public'),
-                                  ],
-                                ),
-                                OutlinedButton.icon(
-                                  onPressed: () {},
-                                  style: OutlinedButton.styleFrom(foregroundColor: Colors.black, backgroundColor: Colors.white),
-                                  icon: const Icon(Icons.add),
-                                  label: const Text('Add Image'),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
+      builder: (ctx) => _TaskModalSheet(
+        data: m,
+        onUpdated: (updated) {
+          setState(() {
+            final id = (updated['_id'] ?? updated['id'] ?? '').toString();
+            final idx = _completed.indexWhere((x) => (x['_id'] ?? x['id']).toString() == id);
+            if (idx >= 0) _completed[idx] = updated.cast<String, dynamic>();
+          });
+        },
+        onDelete: (id) async {
+          await _delete(id);
+        },
+      ),
     );
   }
 
@@ -542,4 +312,273 @@ class _TaskListViewState extends State<TaskListView> {
           borderSide: const BorderSide(color: Colors.white60),
         ),
       );
+}
+
+class _TaskModalSheet extends StatefulWidget {
+  final Map<String, dynamic> data;
+  final void Function(Map<String, dynamic> updated) onUpdated;
+  final Future<void> Function(String id) onDelete;
+  const _TaskModalSheet({required this.data, required this.onUpdated, required this.onDelete});
+  @override
+  State<_TaskModalSheet> createState() => _TaskModalSheetState();
+}
+
+class _TaskModalSheetState extends State<_TaskModalSheet> {
+  late bool editable;
+  late String id;
+  late String cat;
+  late TextEditingController titleCtrl;
+  late TextEditingController descCtrl;
+  late TextEditingController startCtrl;
+  late TextEditingController endCtrl;
+  bool setPublic = false;
+
+  @override
+  void initState() {
+    super.initState();
+    editable = false;
+    id = (widget.data['_id'] ?? widget.data['id'] ?? '').toString();
+    final title = (widget.data['taskTitle'] ?? '').toString();
+    final description = (widget.data['description'] ?? '').toString();
+    final timeRange = (widget.data['timeRange'] ?? '').toString();
+    cat = (widget.data['category'] ?? 'self').toString();
+    final parts = timeRange.split('-');
+    titleCtrl = TextEditingController(text: title);
+    descCtrl = TextEditingController(text: description);
+    startCtrl = TextEditingController(text: parts.isNotEmpty ? parts[0].trim() : '');
+    endCtrl = TextEditingController(text: parts.length > 1 ? parts[1].trim() : '');
+  }
+
+  @override
+  void dispose() {
+    titleCtrl.dispose();
+    descCtrl.dispose();
+    startCtrl.dispose();
+    endCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    return SafeArea(
+      child: AnimatedPadding(
+        duration: const Duration(milliseconds: 120),
+        padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: media.size.width * 0.94,
+              maxHeight: media.size.height * 0.9,
+            ),
+            child: Material(
+              color: const Color(0xFF1E1E1E),
+              borderRadius: BorderRadius.circular(24),
+              clipBehavior: Clip.antiAlias,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back, color: Colors.white70),
+                          onPressed: () => Navigator.pop(context),
+                          tooltip: 'Back',
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: Icon(editable ? Icons.check : Icons.edit, color: Colors.white70),
+                          onPressed: () async {
+                            if (!editable) {
+                              setState(() => editable = true);
+                              return;
+                            }
+                            try {
+                              final prefs = await SharedPreferences.getInstance();
+                              final token = prefs.getString('token') ?? '';
+                              final updates = {
+                                'taskTitle': titleCtrl.text.trim(),
+                                'category': cat,
+                                'timeRange': '${startCtrl.text.trim()}-${endCtrl.text.trim()}',
+                                'description': descCtrl.text.trim(),
+                              };
+                              final updated = await ApiService.updateTask(token, id, updates);
+                              widget.onUpdated(updated.cast<String, dynamic>());
+                              if (mounted) setState(() => editable = false);
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Update failed: ${e.toString()}')));
+                              }
+                            }
+                          },
+                          tooltip: editable ? 'Save' : 'Edit',
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.white70),
+                          onPressed: () async {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (dctx) => Theme(
+                                data: Theme.of(dctx).copyWith(
+                                  colorScheme: const ColorScheme.dark(
+                                    primary: Colors.white,
+                                    secondary: Colors.white,
+                                    surface: Color(0xFF1E1E1E),
+                                    onSurface: Colors.white,
+                                  ),
+                                ),
+                                child: AlertDialog(
+                                  backgroundColor: const Color(0xFF1E1E1E),
+                                  titleTextStyle: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+                                  contentTextStyle: const TextStyle(color: Colors.white70),
+                                  title: const Text('Delete task?'),
+                                  content: const Text('This action cannot be undone.'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(dctx, false),
+                                      style: TextButton.styleFrom(foregroundColor: Colors.white70),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(dctx, true),
+                                      style: TextButton.styleFrom(foregroundColor: Colors.white),
+                                      child: const Text('Delete'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                            if (confirm == true) {
+                              await widget.onDelete(id);
+                              if (mounted) Navigator.pop(context);
+                            }
+                          },
+                          tooltip: 'Delete',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    editable
+                        ? TextField(
+                            controller: titleCtrl,
+                            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
+                            decoration: _dec('Title'),
+                          )
+                        : Text(titleCtrl.text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 20)),
+                    const SizedBox(height: 6),
+                    editable
+                        ? DropdownButtonFormField<String>(
+                            value: cat,
+                            items: const [
+                              DropdownMenuItem(value: 'school', child: Text('School')),
+                              DropdownMenuItem(value: 'work', child: Text('Work')),
+                              DropdownMenuItem(value: 'self', child: Text('Self')),
+                              DropdownMenuItem(value: 'house', child: Text('House')),
+                            ],
+                            onChanged: (v) => setState(() => cat = v ?? cat),
+                            dropdownColor: Colors.black,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: _dec('Category'),
+                          )
+                        : Text(_toTitleCase(cat), style: const TextStyle(color: Colors.white70, fontStyle: FontStyle.italic)),
+                    const SizedBox(height: 8),
+                    editable
+                        ? Row(
+                            children: [
+                              Expanded(child: TextField(controller: startCtrl, style: const TextStyle(color: Colors.white), decoration: _dec('Start (HH:mm)'))),
+                              const SizedBox(width: 12),
+                              Expanded(child: TextField(controller: endCtrl, style: const TextStyle(color: Colors.white), decoration: _dec('End (HH:mm)'))),
+                            ],
+                          )
+                        : Text('${startCtrl.text}-${endCtrl.text}', style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            editable
+                                ? TextField(controller: descCtrl, maxLines: 6, style: const TextStyle(color: Colors.white), decoration: _dec('Description'))
+                                : Text(descCtrl.text, style: const TextStyle(color: Colors.white70)),
+                            const SizedBox(height: 16),
+                            GridView.builder(
+                              itemCount: 3,
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                mainAxisSpacing: 12,
+                                crossAxisSpacing: 12,
+                                childAspectRatio: 1.3,
+                              ),
+                              itemBuilder: (_, i) => Container(
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF4A4A4A),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Theme(
+                              data: Theme.of(context).copyWith(
+                                switchTheme: const SwitchThemeData(
+                                  thumbColor: MaterialStatePropertyAll(Colors.black),
+                                  trackColor: MaterialStatePropertyAll(Color(0xFFCCCCCC)),
+                                ),
+                              ),
+                              child: Switch(
+                                value: setPublic,
+                                onChanged: (v) => setState(() => setPublic = v),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text('Set as public'),
+                          ],
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () {},
+                          style: OutlinedButton.styleFrom(foregroundColor: Colors.black, backgroundColor: Colors.white),
+                          icon: const Icon(Icons.add),
+                          label: const Text('Add Image'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+  
+  // Local helpers to keep the modal self-contained
+  InputDecoration _dec(String label) => InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Colors.white70),
+        filled: true,
+        fillColor: const Color(0xFF2B2B2B),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.white24),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.white60),
+        ),
+      );
+
+  String _toTitleCase(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 }
