@@ -492,7 +492,26 @@ class _HomeScreen extends State<HomeScreen> {
                       else if (s == null) err = 'Start time must be in HH:mm (24h)';
                       else if (endParsed == null) err = 'End time must be in HH:mm (24h)';
                       if (err != null) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err!)));
+                        await showDialog(
+                          context: context,
+                          builder: (dctx) => Theme(
+                            data: Theme.of(dctx).copyWith(
+                              colorScheme: const ColorScheme.dark(
+                                primary: Colors.white,
+                                secondary: Colors.white,
+                                surface: Color(0xFF1E1E1E),
+                                onSurface: Colors.white,
+                              ),
+                            ),
+                            child: AlertDialog(
+                              backgroundColor: const Color(0xFFEAE6E0),
+                              title: const Text('Invalid input'),
+                              content: Text(err!),
+                              actions: [TextButton(onPressed: () => Navigator.pop(dctx),  child: const Text('OK'
+                              ,style: TextStyle(color: Colors.black),))],
+                            ),
+                          ),
+                        );
                         return;
                       }
                       final DateTime sdt = s!;
@@ -645,7 +664,7 @@ class _HomeScreen extends State<HomeScreen> {
         ];
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFEAE6E0),
         elevation: 0,
         shadowColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
@@ -701,7 +720,7 @@ class _HomeScreen extends State<HomeScreen> {
           LayoutBuilder(
             builder: (ctx, constraints) {
               final shortest = math.min(constraints.maxWidth, MediaQuery.of(context).size.height * 0.9);
-              final size = shortest * 0.54;
+              final size = shortest * 0.56;
               final pieRadius = (size / 2) - 8;
               return Center(
                 child: SizedBox(
@@ -813,7 +832,9 @@ class _HomeScreen extends State<HomeScreen> {
                           if (ok) await _deleteTask(t);
                         } else if (value == 'hide') {
                           setState(() => _hidden.add(_taskKey(t)));
-                          if (mounted) await _showPopupCard(context, 'Task hidden');
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Task hidden')));
+                          }
                         }
                       },
                       itemBuilder: (ctx) => [
@@ -851,7 +872,7 @@ class _HomeScreen extends State<HomeScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Transform.scale(
-            scale: 1.1,
+            scale: 0.95,
             child: Checkbox(
               value: t.status == 'completed',
               onChanged: (val) => _toggleTaskStatus(t, val ?? false),

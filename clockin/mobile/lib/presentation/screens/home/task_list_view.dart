@@ -79,76 +79,7 @@ class _TaskListViewState extends State<TaskListView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        backgroundColor: const Color(0xFFEAE6E0),
-    //   appBar: AppBar(
-    //     backgroundColor: Colors.white,
-    //     elevation: 0.5,
-    //     titleSpacing: 0,
-    //     title: Row(
-    //       children: [
-    //         const SizedBox(width: 12),
-    //         GestureDetector(
-    //           onTap: () => Navigator.pop(context),
-    //           child: Image.asset('assets/Logo.png', width: 28, height: 28, fit: BoxFit.contain),
-    //         ),
-    //         const SizedBox(width: 10),
-    //         Expanded(
-    //           child: AnimatedContainer(
-    //             duration: const Duration(milliseconds: 180),
-    //             height: 40,
-    //             decoration: BoxDecoration(
-    //               color: _searchFocus.hasFocus ? Colors.white : const Color(0xFFF2F2F2),
-    //               borderRadius: BorderRadius.circular(20),
-    //               boxShadow: _searchFocus.hasFocus
-    //                   ? [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 2))]
-    //                   : null,
-    //             ),
-    //             padding: const EdgeInsets.symmetric(horizontal: 12),
-    //             alignment: Alignment.centerLeft,
-    //             child: Row(
-    //               children: [
-    //                 const Icon(Icons.search, color: Colors.black87),
-    //                 const SizedBox(width: 6),
-    //                 Expanded(
-    //                   child: TextField(
-    //                     focusNode: _searchFocus,
-    //                     controller: _searchCtrl,
-    //                     onChanged: (v) => setState(() => _query = v.trim()),
-    //                     onSubmitted: (_) => _searchFocus.unfocus(),
-    //                     decoration: const InputDecoration(
-                                              
-    //                       hintText: 'Search',
-    //                       hintStyle: TextStyle(color: Colors.black45),
-    //                       border: InputBorder.none,
-    //                       isDense: true,
-    //                       contentPadding: EdgeInsets.zero,
-    //                     ),
-    //                     cursorColor: Colors.black87,
-    //                     style: const TextStyle(color: Colors.black87),
-    //                   ),
-    //                 ),
-    //                 if (_query.isNotEmpty)
-    //                   InkWell(
-    //                     onTap: () => setState(() {
-    //                       _query = '';
-    //                       _searchCtrl.clear();
-    //                     }),
-    //                     child: const Icon(Icons.close, color: Colors.black54),
-    //                   ),
-    //               ],
-    //             ),
-    //           ),
-    //         ),
-    //         const SizedBox(width: 12),
-    //       ],
-    //     ),
-    //     actions: const [
-    //       Padding(
-    //         padding: EdgeInsets.only(right: 12.0),
-    //         child: Icon(Icons.calendar_month_rounded, color: Colors.black),
-    //       ),
-    //     ],
-    //   ),
+    backgroundColor: const Color(0xFFEAE6E0),
     appBar: AppBar(
     automaticallyImplyLeading: false, // 🔥 removes the default back arrow
     backgroundColor: const Color(0xFFEAE6E0),

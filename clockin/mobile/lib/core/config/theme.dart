@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  static const Color _cream = Color(0xFFEAE6E0);
-  static const Color _sand = Color(0xFFD6CBBF);
-  static const Color _steel = Color(0xFF5D7186);
-  static const Color _navy = Color(0xFF0E355A);
+  static const Color _cream = Color(0xFFE9E9E9);
+  static const Color _sand = Color(0xFFD3D3D3);
+  static const Color _steel = Color(0xFF818284);
+  static const Color _navy = Colors.black;
   static const Color _ink = Color(0xFF1B1B1B);
 
   static final ColorScheme _lightScheme = const ColorScheme(
