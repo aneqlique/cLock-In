@@ -7,6 +7,7 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:clockin/core/services/api_service.dart';
+import 'package:clockin/presentation/screens/home/task_list_view.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,6 +21,7 @@ class _HomeScreen extends State<HomeScreen> {
   int index = 1;
   late final List<Widget> pages;
   final List<_Task> _tasks = [];
+  final Set<String> _hidden = <String>{};
   DateTime _base = DateTime.now();
 
   @override
@@ -31,6 +33,222 @@ class _HomeScreen extends State<HomeScreen> {
       SettingsScreen(), 
     ];
     _loadTasks();
+  }
+
+  Future<bool> _confirmDelete(BuildContext context) async {
+    final res = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => Theme(
+        data: Theme.of(dctx).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: Colors.white,
+            secondary: Colors.white,
+            surface: Color(0xFF1E1E1E),
+            onSurface: Colors.white,
+          ),
+        ),
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          titleTextStyle: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+          contentTextStyle: const TextStyle(color: Colors.white70),
+          title: const Text('Delete task?'),
+          content: const Text('This action cannot be undone.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dctx, false), style: TextButton.styleFrom(foregroundColor: Colors.white70), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(dctx, true), style: TextButton.styleFrom(foregroundColor: Colors.white), child: const Text('Delete')),
+          ],
+        ),
+      ),
+    );
+    return res == true;
+  }
+
+  Future<void> _openEditTask(_Task t) async {
+    final titleCtrl = TextEditingController(text: t.title);
+    final descCtrl = TextEditingController(text: t.description);
+    final startCtrl = TextEditingController(text: _formatTOD(TimeOfDay(hour: t.start.hour, minute: t.start.minute)));
+    final endCtrl = TextEditingController(text: _formatTOD(TimeOfDay(hour: t.end.hour % 24, minute: t.end.minute)));
+    String category = t.category; // Already capitalized
+
+    final updated = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.black,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Edit Task', style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700, color: Colors.white)),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: titleCtrl,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Title',
+                    labelStyle: const TextStyle(color: Colors.white70),
+                    filled: true,
+                    fillColor: Colors.white10,
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.white24)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.white60)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: category,
+                  items: const [
+                    DropdownMenuItem(value: 'School', child: Text('School')),
+                    DropdownMenuItem(value: 'Work', child: Text('Work')),
+                    DropdownMenuItem(value: 'Self', child: Text('Self')),
+                    DropdownMenuItem(value: 'House', child: Text('House')),
+                  ],
+                  onChanged: (v) => category = v ?? category,
+                  dropdownColor: Colors.black,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Category',
+                    labelStyle: const TextStyle(color: Colors.white70),
+                    filled: true,
+                    fillColor: Colors.white10,
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.white24)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.white60)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(
+                    child: TextField(
+                      controller: startCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        LengthLimitingTextInputFormatter(5),
+                        _HhMmFormatter(),
+                      ],
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Start (HH:mm)',
+                        hintText: 'HH:mm',
+                        helperText: '24-hour format',
+                        helperStyle: const TextStyle(color: Colors.white38),
+                        labelStyle: const TextStyle(color: Colors.white70),
+                        filled: true,
+                        fillColor: Colors.white10,
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.white24)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.white60)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: endCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        LengthLimitingTextInputFormatter(5),
+                        _HhMmFormatter(),
+                      ],
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'End (HH:mm)',
+                        hintText: 'HH:mm',
+                        helperText: '24-hour format',
+                        helperStyle: const TextStyle(color: Colors.white38),
+                        labelStyle: const TextStyle(color: Colors.white70),
+                        filled: true,
+                        fillColor: Colors.white10,
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.white24)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.white60)),
+                      ),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descCtrl,
+                  maxLines: 3,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Description',
+                    labelStyle: const TextStyle(color: Colors.white70),
+                    filled: true,
+                    fillColor: Colors.white10,
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.white24)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.white60)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      final title = titleCtrl.text.trim();
+                      final s = _parse24ToDateToday(startCtrl.text.trim());
+                      final e0 = _parse24ToDateToday(endCtrl.text.trim());
+                      String? err;
+                      if (title.isEmpty) err = 'Please enter a title';
+                      if (s == null) err = 'Start time must be in HH:mm (24h)';
+                      if (e0 == null) err = 'End time must be in HH:mm (24h)';
+                      if (err != null) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err!)));
+                        }
+                        return;
+                      }
+                      DateTime start = s!;
+                      DateTime end = e0!;
+                      if (!end.isAfter(start)) end = end.add(const Duration(days: 1));
+                      try {
+                        final prefs = await SharedPreferences.getInstance();
+                        final token = prefs.getString('token') ?? '';
+                        final startStr = _formatTOD(TimeOfDay(hour: start.hour, minute: start.minute));
+                        final endStr = _formatTOD(TimeOfDay(hour: end.hour % 24, minute: end.minute));
+                        await ApiService.updateTask(token, t.id ?? '', {
+                          'taskTitle': title,
+                          'category': category.toLowerCase(),
+                          'timeRange': '$startStr-$endStr',
+                          'description': descCtrl.text.trim(),
+                        });
+                        setState(() {
+                          final i = _tasks.indexOf(t);
+                          final oldStatus = t.status;
+                          if (i >= 0) {
+                            _tasks[i] = _Task(
+                              id: t.id,
+                              title: title,
+                              category: category,
+                              description: descCtrl.text.trim(),
+                              color: _categoryColor(category),
+                              start: start,
+                              end: end,
+                              status: oldStatus,
+                            );
+                          }
+                        });
+                        if (mounted) Navigator.pop(ctx, true);
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update: ${e.toString()}')));
+                        }
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(vertical: 14)),
+                    child: const Text('Save Changes'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (updated == true) {
+      setState(() {});
+    }
   }
 
   Future<void> _deleteTask(_Task t) async {
@@ -82,24 +300,25 @@ class _HomeScreen extends State<HomeScreen> {
     final ci = _currentTaskIndex();
 
     final segs = <_ChartSeg>[];
-    for (final t in _tasks) {
+    for (final t in _tasks.where((t) => !_hidden.contains(_taskKey(t)))) {
       final isCurrent = _tasks.indexOf(t) == ci;
       final startMin = _minutesSinceMidnight(t.start).toDouble();
       final endMin = _minutesSinceMidnight(t.end).toDouble();
-      final clr = isCurrent ? const Color(0xFF3A3A3A) : Colors.transparent;
+      final clr = (isCurrent && t.status != 'completed') ? const Color(0xFF3A3A3A) : Colors.transparent;
+      final lbl = t.status == 'completed' ? '' : t.title;
       if (t.end.day != t.start.day) {
         final dur = t.durationMinutes.toDouble();
         final midAbs = (startMin + dur / 2) % totalMinutes;
         final firstDur = (totalMinutes - startMin);
         final secondDur = endMin;
         final midInFirst = midAbs >= startMin;
-        segs.add(_ChartSeg(start: startMin, duration: firstDur, color: clr, title: midInFirst ? t.title : ''));
+        segs.add(_ChartSeg(start: startMin, duration: firstDur, color: clr, title: midInFirst ? lbl : ''));
         if (secondDur > 0) {
-          segs.add(_ChartSeg(start: 0, duration: secondDur, color: clr, title: midInFirst ? '' : t.title));
+          segs.add(_ChartSeg(start: 0, duration: secondDur, color: clr, title: midInFirst ? '' : lbl));
         }
       } else {
         final dur = t.durationMinutes.toDouble();
-        segs.add(_ChartSeg(start: startMin, duration: dur, color: clr, title: t.title));
+        segs.add(_ChartSeg(start: startMin, duration: dur, color: clr, title: lbl));
       }
     }
     segs.sort((a, b) => a.start.compareTo(b.start));
@@ -265,21 +484,30 @@ class _HomeScreen extends State<HomeScreen> {
                       final title = titleCtrl.text.trim();
                       final s = _parse24ToDateToday(startCtrl.text.trim());
                       final endParsed = _parse24ToDateToday(endCtrl.text.trim());
-                      if (title.isEmpty || s == null || endParsed == null) {
-                        await showDialog(context: context, builder: (_) => AlertDialog(title: const Text('Invalid Input'), content: const Text('Enter title and valid HH:mm start/end'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))]));
+                      String? err;
+                      final catNorm = (category.trim().toLowerCase());
+                      const allowed = ['school','work','self','house'];
+                      if (title.isEmpty) err = 'Please enter a title';
+                      else if (!allowed.contains(catNorm)) err = 'Please select a valid category';
+                      else if (s == null) err = 'Start time must be in HH:mm (24h)';
+                      else if (endParsed == null) err = 'End time must be in HH:mm (24h)';
+                      if (err != null) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err!)));
                         return;
                       }
-                      DateTime e = endParsed;
-                      if (!e.isAfter(s)) {
+                      final DateTime sdt = s!;
+                      final DateTime edt = endParsed!;
+                      DateTime e = edt;
+                      if (!e.isAfter(sdt)) {
                         e = e.add(const Duration(days: 1));
                       }
                       final color = _categoryColor(category);
-                      final hasOverlap = _tasks.any((t) => s.isBefore(t.end) && e.isAfter(t.start));
+                      final hasOverlap = _tasks.any((t) => sdt.isBefore(t.end) && e.isAfter(t.start));
                       if (hasOverlap) {
-                        await showDialog(context: context, builder: (_) => AlertDialog(title: const Text('Overlap Detected'), content: const Text('Selected time overlaps with another task'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))]));
+                        await showDialog(context: context, builder: (_) => AlertDialog(title: const Text('Overlap Detected'), content: const Text('The selected time overlaps with another task'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))]));
                         return;
                       }
-                      Navigator.pop(ctx, _Task(title: title, category: category, description: descCtrl.text.trim(), color: color, start: s, end: e, status: 'pending'));
+                      Navigator.pop(ctx, _Task(title: title, category: category, description: descCtrl.text.trim(), color: color, start: sdt, end: e, status: 'pending'));
                     },
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(vertical: 14)),
                     child: const Text('Add Task'),
@@ -317,7 +545,10 @@ class _HomeScreen extends State<HomeScreen> {
             status: (created['status'] ?? res.status).toString(),
           ));
         });
-      } catch (_) {
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to create task: ${e.toString()}')));
+        }
         // Fallback: still add locally if API fails
         setState(() => _tasks.add(res));
       }
@@ -413,6 +644,19 @@ class _HomeScreen extends State<HomeScreen> {
           Icon(Icons.person, size: 30, color: Colors.white),
         ];
     return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        shadowColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.menu_book_rounded, color: Colors.black),
+          onPressed: () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const TaskListView()));
+          },
+          tooltip: 'Completed Tasks',
+        ),
+      ),
       // extendBody: true,
       body: index == 1
           ? _buildClockTab(context)
@@ -450,14 +694,14 @@ class _HomeScreen extends State<HomeScreen> {
         children: [
           const SizedBox(height: 8),
           Text(
-            _formatDate(DateTime.now()),
+            _formatDateWithTime(DateTime.now()),
             style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 12),
           LayoutBuilder(
             builder: (ctx, constraints) {
               final shortest = math.min(constraints.maxWidth, MediaQuery.of(context).size.height * 0.9);
-              final size = shortest * 0.62;
+              final size = shortest * 0.54;
               final pieRadius = (size / 2) - 8;
               return Center(
                 child: SizedBox(
@@ -489,7 +733,10 @@ class _HomeScreen extends State<HomeScreen> {
             },
           ),
           const SizedBox(height: 12),
-          if (currentIdx >= 0) _currentTaskChip(_tasks[currentIdx]) else const SizedBox(),
+          if (currentIdx >= 0 && !_hidden.contains(_taskKey(_tasks[currentIdx])))
+            _currentTaskChip(_tasks[currentIdx])
+          else
+            const SizedBox(),
           const SizedBox(height: 8),
           Expanded(
             child: RefreshIndicator(
@@ -502,6 +749,7 @@ class _HomeScreen extends State<HomeScreen> {
                       if (aWrap != bWrap) return aWrap ? 1 : -1;
                       return _minutesSinceMidnight(a.start).compareTo(_minutesSinceMidnight(b.start));
                     }))
+                  .where((t) => !_hidden.contains(_taskKey(t)))
                   .length,
               separatorBuilder: (_, __) => const SizedBox(height: 10),
               itemBuilder: (ctx, i) {
@@ -512,7 +760,8 @@ class _HomeScreen extends State<HomeScreen> {
                     if (aWrap != bWrap) return aWrap ? 1 : -1;
                     return _minutesSinceMidnight(a.start).compareTo(_minutesSinceMidnight(b.start));
                   });
-                final t = sorted[i];
+                final visible = sorted.where((t) => !_hidden.contains(_taskKey(t))).toList();
+                final t = visible[i];
                 final tCurrent = currentIdx >= 0 ? _tasks[currentIdx] : null;
                 final isCurrent = tCurrent != null && identical(t, tCurrent);
                 return Container(
@@ -530,7 +779,7 @@ class _HomeScreen extends State<HomeScreen> {
                           _toggleTaskStatus(t, val ?? false);
                         },
                         fillColor: MaterialStateProperty.all(isCurrent ? const Color(0xFF6B6B6B) : Colors.white),
-                        checkColor: Colors.white,
+                        checkColor: Colors.black,
                         side: BorderSide(color: Colors.black.withOpacity(.3)),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                       ),
@@ -551,10 +800,37 @@ class _HomeScreen extends State<HomeScreen> {
                         color: t.status == 'completed' ? Colors.black54 : Colors.black87,
                       ),
                     ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.redAccent),
-                      onPressed: () => _deleteTask(t),
-                      tooltip: 'Delete',
+                    trailing: PopupMenuButton<String>(
+                      tooltip: 'More',
+                      color: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      icon: const Icon(Icons.more_vert, color: Colors.black45),
+                      onSelected: (value) async {
+                        if (value == 'edit') {
+                          await _openEditTask(t);
+                        } else if (value == 'delete') {
+                          final ok = await _confirmDelete(context);
+                          if (ok) await _deleteTask(t);
+                        } else if (value == 'hide') {
+                          setState(() => _hidden.add(_taskKey(t)));
+                          if (mounted) await _showPopupCard(context, 'Task hidden');
+                        }
+                      },
+                      itemBuilder: (ctx) => [
+                        PopupMenuItem(
+                          value: 'edit',
+                          child: Row(children: const [Icon(Icons.edit, color: Colors.black54), SizedBox(width: 8), Text('Edit')]),
+                        ),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Row(children: const [Icon(Icons.delete, color: Colors.black54), SizedBox(width: 8), Text('Delete')]),
+                        ),
+                        if (t.status == 'completed')
+                          PopupMenuItem(
+                            value: 'hide',
+                            child: Row(children: const [Icon(Icons.visibility_off, color: Colors.black54), SizedBox(width: 8), Text('Hide')]),
+                          ),
+                      ],
                     ),
                   ),
                 );
@@ -574,13 +850,15 @@ class _HomeScreen extends State<HomeScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            height: 22,
-            width: 22,
-            decoration: BoxDecoration(
-              color: const Color(0xFF6B6B6B),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.white.withOpacity(.6), width: 1),
+          Transform.scale(
+            scale: 1.1,
+            child: Checkbox(
+              value: t.status == 'completed',
+              onChanged: (val) => _toggleTaskStatus(t, val ?? false),
+              fillColor: MaterialStateProperty.all(const Color(0xFF6B6B6B)),
+              checkColor: Colors.black,
+              side: BorderSide(color: Colors.white.withOpacity(.6)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
             ),
           ),
           const SizedBox(width: 10),
@@ -590,12 +868,15 @@ class _HomeScreen extends State<HomeScreen> {
     );
   }
 
-  String _formatDate(DateTime d) {
+  String _formatDateWithTime(DateTime d) {
     const weekdays = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     final wd = weekdays[d.weekday - 1];
     final m = months[d.month - 1];
-    return '$wd, $m ${d.day.toString().padLeft(2,'0')}';
+    final hh = (d.hour % 12 == 0 ? 12 : d.hour % 12).toString().padLeft(2, '0');
+    final mm = d.minute.toString().padLeft(2, '0');
+    final ap = d.hour >= 12 ? 'PM' : 'AM';
+    return '$wd, $m ${d.day.toString().padLeft(2,'0')} |  $hh:$mm$ap';
   }
 
   String _formatTime(DateTime d) {
@@ -617,6 +898,7 @@ class _HomeScreen extends State<HomeScreen> {
   }
 
   int _minutesSinceMidnight(DateTime dt) => dt.hour * 60 + dt.minute;
+  String _taskKey(_Task t) => t.id ?? '${t.title}-${t.start.millisecondsSinceEpoch}';
   
   DateTime? _parse24ToDateToday(String input) {
     final m = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(input);
