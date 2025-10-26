@@ -5,11 +5,13 @@ import 'package:clockin/presentation/screens/settings/settings_screen.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'dart:math' as math;
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:clockin/core/services/api_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
- @override
+  @override
   State<HomeScreen> createState() => _HomeScreen();
 }
 
@@ -28,6 +30,7 @@ class _HomeScreen extends State<HomeScreen> {
       SizedBox.shrink(), 
       SettingsScreen(), 
     ];
+    _loadTasks();
   }
 
   int _currentTaskIndex() {
@@ -255,7 +258,7 @@ class _HomeScreen extends State<HomeScreen> {
                         await showDialog(context: context, builder: (_) => AlertDialog(title: const Text('Overlap Detected'), content: const Text('Selected time overlaps with another task'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))]));
                         return;
                       }
-                      Navigator.pop(ctx, _Task(title: title, category: category, description: descCtrl.text.trim(), color: color, start: s, end: e));
+                      Navigator.pop(ctx, _Task(title: title, category: category, description: descCtrl.text.trim(), color: color, start: s, end: e, status: 'pending'));
                     },
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(vertical: 14)),
                     child: const Text('Add Task'),
@@ -268,7 +271,101 @@ class _HomeScreen extends State<HomeScreen> {
       },
     );
     if (res != null) {
-      setState(() => _tasks.add(res));
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final token = prefs.getString('token') ?? '';
+        final startStr = _formatTOD(TimeOfDay(hour: res.start.hour, minute: res.start.minute));
+        final endStr = _formatTOD(TimeOfDay(hour: res.end.hour % 24, minute: res.end.minute));
+        final created = await ApiService.createTask(token, {
+          'taskTitle': res.title,
+          'category': res.category.toString().toLowerCase(),
+          'timeRange': '$startStr-$endStr',
+          'description': res.description,
+          'status': res.status,
+        });
+        final id = (created['_id'] ?? created['id'] ?? '').toString();
+        setState(() {
+          _tasks.add(_Task(
+            id: id.isEmpty ? null : id,
+            title: res.title,
+            category: res.category,
+            description: res.description,
+            color: res.color,
+            start: res.start,
+            end: res.end,
+            status: (created['status'] ?? res.status).toString(),
+          ));
+        });
+      } catch (_) {
+        // Fallback: still add locally if API fails
+        setState(() => _tasks.add(res));
+      }
+    }
+  }
+
+  Future<void> _loadTasks() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token') ?? '';
+      if (token.isEmpty) return;
+      final list = await ApiService.getTasks(token);
+      final loaded = <_Task>[];
+      for (final item in list) {
+        if (item is Map) {
+          final m = item.cast<String, dynamic>();
+          final id = (m['_id'] ?? m['id'] ?? '').toString();
+          final title = (m['taskTitle'] ?? '').toString();
+          final category = (m['category'] ?? 'self').toString();
+          final timeRange = (m['timeRange'] ?? '').toString();
+          final description = (m['description'] ?? '').toString();
+          final status = (m['status'] ?? 'pending').toString();
+          final parts = timeRange.split('-');
+          if (parts.length == 2) {
+            final s = _parse24ToDateToday(parts[0].trim());
+            final e0 = _parse24ToDateToday(parts[1].trim());
+            if (s != null && e0 != null) {
+              var e = e0;
+              if (!e.isAfter(s)) e = e.add(const Duration(days: 1));
+              loaded.add(_Task(
+                id: id.isEmpty ? null : id,
+                title: title,
+                category: category[0].toUpperCase() + category.substring(1),
+                description: description,
+                color: _categoryColor(category[0].toUpperCase() + category.substring(1)),
+                start: s,
+                end: e,
+                status: status,
+              ));
+            }
+          }
+        }
+      }
+      setState(() {
+        _tasks
+          ..clear()
+          ..addAll(loaded);
+      });
+    } catch (_) {
+      // ignore load errors for now
+    }
+  }
+
+  Future<void> _toggleTaskStatus(_Task t, bool completed) async {
+    final old = t.status;
+    setState(() {
+      t.status = completed ? 'completed' : 'pending';
+    });
+    final id = t.id;
+    if (id == null || id.isEmpty) return; // local only
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token') ?? '';
+      await ApiService.updateTask(token, id, {'status': t.status});
+    } catch (_) {
+      // revert on failure
+      setState(() {
+        t.status = old;
+      });
     }
   }
 
@@ -405,8 +502,10 @@ class _HomeScreen extends State<HomeScreen> {
                     leading: Transform.scale(
                       scale: 1.2,
                       child: Checkbox(
-                        value: false,
-                        onChanged: (_) {},
+                        value: t.status == 'completed',
+                        onChanged: (val) {
+                          _toggleTaskStatus(t, val ?? false);
+                        },
                         fillColor: MaterialStateProperty.all(isCurrent ? const Color(0xFF6B6B6B) : Colors.white),
                         checkColor: Colors.white,
                         side: BorderSide(color: Colors.black.withOpacity(.3)),
@@ -490,14 +589,16 @@ class _HomeScreen extends State<HomeScreen> {
 }
 
 class _Task {
+  final String? id;
   final String title;
   final String category;
   final String description;
   final Color color;
   final DateTime start;
   final DateTime end;
+  String status;
   int get durationMinutes => end.difference(start).inMinutes;
-  _Task({required this.title, required this.category, required this.description, required this.color, required this.start, required this.end});
+  _Task({this.id, required this.title, required this.category, required this.description, required this.color, required this.start, required this.end, this.status = 'pending'});
 }
 
 class _ChartSeg {
