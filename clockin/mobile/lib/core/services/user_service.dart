@@ -139,7 +139,41 @@ class UserService {
   // Logout and Clear User Data
   Future<void> logout() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
+    // Preserve hidden task keys across logout
+    final hiddenSnapshots = <String, List<String>>{};
+    for (final k in prefs.getKeys()) {
+      if (k.startsWith('hidden_')) {
+        hiddenSnapshots[k] = prefs.getStringList(k) ?? const <String>[];
+      }
+    }
     await prefs.clear();
+    // Restore preserved hidden_* keys
+    for (final entry in hiddenSnapshots.entries) {
+      await prefs.setStringList(entry.key, entry.value);
+    }
+  }
+
+  Future<Map<String, dynamic>> updateUser({
+    required String token,
+    required String id,
+    required Map<String, dynamic> updates,
+  }) async {
+    final uri = Uri.parse('$host/api/users/$id');
+    final res = await http.put(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(updates),
+    );
+    if (res.statusCode == 200) {
+      final decoded = jsonDecode(res.body);
+      return (decoded is Map) ? decoded.cast<String, dynamic>() : {'data': decoded};
+    } else {
+      final body = res.body.isNotEmpty ? res.body : '<empty body>';
+      throw Exception('Failed to update user: ${res.statusCode} $body');
+    }
   }
 
   // Fetch all users from backend (simple public GET)
@@ -160,12 +194,35 @@ class UserService {
     }
   }
 
+  // Prefer authenticated current user endpoint
+  Future<Map<String, dynamic>?> getMe(String token) async {
+    if (token.isEmpty) return null;
+    final uri = Uri.parse('$host/api/users/me');
+    final res = await http.get(uri, headers: {
+      'Authorization': 'Bearer $token',
+    });
+    if (res.statusCode == 200) {
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map) return decoded.cast<String, dynamic>();
+      return {'data': decoded};
+    }
+    return null;
+  }
+
   // Resolve current user by matching stored email/username against backend list
   Future<Map<String, dynamic>?> fetchAndCacheCurrentUser() async {
     final prefs = await SharedPreferences.getInstance();
     final storedId = prefs.getString('id') ?? '';
     final storedEmail = prefs.getString('email') ?? '';
     final storedUsername = prefs.getString('username') ?? '';
+    final token = prefs.getString('token') ?? '';
+
+    // Try /users/me first
+    final me = await getMe(token);
+    if (me != null && me.isNotEmpty) {
+      await saveUserData({'user': me, 'token': token});
+      return me;
+    }
 
     final users = await fetchUsers();
     Map<String, dynamic>? found;

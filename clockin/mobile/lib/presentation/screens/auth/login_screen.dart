@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/services/user_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -29,6 +30,17 @@ class _LoginScreenState extends State<LoginScreen> {
       final userService = UserService();
       final data = await userService.loginUser(_usernameCtrl.text, _passwordCtrl.text);
       await userService.saveUserData(data);
+      // Ensure username is available in prefs even if backend didn't return it
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        if ((prefs.getString('username') ?? '').isEmpty) {
+          await prefs.setString('username', _usernameCtrl.text.trim());
+        }
+      } catch (_) {}
+      // Try to fetch full user details so Settings can show them
+      try {
+        await userService.fetchAndCacheCurrentUser();
+      } catch (_) {}
       if (!mounted) return;
       setState(() => _loading = false);
       Navigator.pushReplacementNamed(context, '/home');

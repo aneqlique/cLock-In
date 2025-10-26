@@ -33,6 +33,7 @@ class _HomeScreen extends State<HomeScreen> {
       SettingsScreen(), 
     ];
     _loadTasks();
+    _loadHidden();
   }
 
   Future<bool> _confirmDelete(BuildContext context) async {
@@ -748,29 +749,36 @@ class _HomeScreen extends State<HomeScreen> {
               final size = math.min(constraints.maxWidth, halfHeight);
               final pieRadius = (size / 2) - 8;
               return Center(
-                child: SizedBox(
-                  width: size,
-                  height: size,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(0xFF151515),
-                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(.15), blurRadius: 10, spreadRadius: 2)],
-                        ),
-                        child: PieChart(
-                          PieChartData(
-                            sections: _sections(borderColor, pieRadius),
-                            startDegreeOffset: -90,
-                            sectionsSpace: 0,
-                            centerSpaceRadius: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.black, width: 2),
+                  ),
+                  child: SizedBox(
+                    width: size,
+                    height: size,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(0xFF151515),
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(.15), blurRadius: 10, spreadRadius: 2)],
+                          ),
+                          child: PieChart(
+                            PieChartData(
+                              sections: _sections(borderColor, pieRadius),
+                              startDegreeOffset: -90,
+                              sectionsSpace: 0,
+                              centerSpaceRadius: 0,
+                            ),
                           ),
                         ),
-                      ),
-                      Positioned.fill(child: _ClockOverlay()),
-                    ],
+                        Positioned.fill(child: _ClockOverlay()),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -857,6 +865,7 @@ class _HomeScreen extends State<HomeScreen> {
                           if (ok) await _deleteTask(t);
                         } else if (value == 'hide') {
                           setState(() => _hidden.add(_taskKey(t)));
+                          await _saveHidden();
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Task hidden')));
                           }
@@ -945,6 +954,31 @@ class _HomeScreen extends State<HomeScreen> {
 
   int _minutesSinceMidnight(DateTime dt) => dt.hour * 60 + dt.minute;
   String _taskKey(_Task t) => t.id ?? '${t.title}-${t.start.millisecondsSinceEpoch}';
+  String _hiddenPrefsKey(String userId) => 'hidden_'
+      '${userId.isNotEmpty ? userId : 'guest'}';
+  
+  Future<void> _loadHidden() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('id') ?? 'guest';
+      final key = _hiddenPrefsKey(userId);
+      final list = prefs.getStringList(key) ?? const <String>[];
+      setState(() {
+        _hidden
+          ..clear()
+          ..addAll(list);
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _saveHidden() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('id') ?? 'guest';
+      final key = _hiddenPrefsKey(userId);
+      await prefs.setStringList(key, _hidden.toList());
+    } catch (_) {}
+  }
   
   DateTime? _parse24ToDateToday(String input) {
     final m = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(input);

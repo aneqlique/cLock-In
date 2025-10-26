@@ -87,13 +87,13 @@ class _TaskListViewState extends State<TaskListView> {
     titleSpacing: 0,
     title: Row(
         children: [
-        const SizedBox(width: 12),
+        const SizedBox(width: 15),
         GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Image.asset(
             'assets/Logo.png',
-            width: 28,
-            height: 28,
+            width: 30,
+            height: 30,
             fit: BoxFit.contain,
             ),
         ),
