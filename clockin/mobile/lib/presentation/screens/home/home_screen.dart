@@ -33,6 +33,27 @@ class _HomeScreen extends State<HomeScreen> {
     _loadTasks();
   }
 
+  Future<void> _deleteTask(_Task t) async {
+    final idx = _tasks.indexOf(t);
+    if (idx < 0) return;
+    final removed = t;
+    setState(() {
+      _tasks.removeAt(idx);
+    });
+    final id = removed.id;
+    if (id == null || id.isEmpty) return; // local-only task
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token') ?? '';
+      await ApiService.deleteTask(token, id);
+    } catch (_) {
+      // rollback
+      setState(() {
+        _tasks.insert(idx, removed);
+      });
+    }
+  }
+
   int _currentTaskIndex() {
     if (_tasks.isEmpty) return -1;
     final now = DateTime.now();
@@ -471,7 +492,9 @@ class _HomeScreen extends State<HomeScreen> {
           if (currentIdx >= 0) _currentTaskChip(_tasks[currentIdx]) else const SizedBox(),
           const SizedBox(height: 8),
           Expanded(
-            child: ListView.separated(
+            child: RefreshIndicator(
+              onRefresh: _loadTasks,
+              child: ListView.separated(
               itemCount: ([..._tasks]
                     ..sort((a, b) {
                       final aWrap = a.end.day != a.start.day;
@@ -512,13 +535,32 @@ class _HomeScreen extends State<HomeScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                       ),
                     ),
-                    title: Text(t.title, style: const TextStyle(fontWeight: FontWeight.w700)),
-                    subtitle: Text('${t.category} | ${_formatTime(t.start)} - ${_formatTime(t.end)}\n${t.description}', maxLines: 2, overflow: TextOverflow.ellipsis),
-                    trailing: const Icon(Icons.more_vert, color: Colors.black45),
+                    title: Text(
+                      t.title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        decoration: t.status == 'completed' ? TextDecoration.lineThrough : TextDecoration.none,
+                        color: t.status == 'completed' ? Colors.black54 : Colors.black,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '${t.category} | ${_formatTime(t.start)} - ${_formatTime(t.end)}\n${t.description}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: t.status == 'completed' ? Colors.black54 : Colors.black87,
+                      ),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.redAccent),
+                      onPressed: () => _deleteTask(t),
+                      tooltip: 'Delete',
+                    ),
                   ),
                 );
               },
             ),
+          ),
           ),
         ],
       ),
