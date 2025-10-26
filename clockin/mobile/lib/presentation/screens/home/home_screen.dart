@@ -326,6 +326,12 @@ class _HomeScreen extends State<HomeScreen> {
 
     final sections = <PieChartSectionData>[];
     var cursor = 0.0;
+    // Precompute mid angles for staggering labels to reduce overlap
+    final mids = <double>[]; // store radians of previous labeled sections
+    const double twoPi = 2 * math.pi;
+    const double threshold = 0.20; // ~11.5 degrees separation
+    const double baseOffset = 0.50; // slightly inward from the edge
+    const double bumpOffset = 0.62; // inward even when staggered
     for (final s in segs) {
       final gap = ((s.start - cursor).clamp(0.0, totalMinutes.toDouble())).toDouble();
       if (gap > 0.0) {
@@ -338,11 +344,28 @@ class _HomeScreen extends State<HomeScreen> {
         ));
         cursor += gap;
       }
+      // Compute stagger offset for this label if it exists
+      double tOffset = baseOffset;
+      if (s.title.isNotEmpty) {
+        final midMinute = (s.start + s.duration / 2.0) % totalMinutes;
+        final midAngle = (midMinute / totalMinutes) * twoPi; // radians
+        // Check proximity with previous labels
+        for (final prev in mids) {
+          final d = (midAngle - prev).abs();
+          final dist = d > math.pi ? (twoPi - d) : d;
+          if (dist < threshold) {
+            tOffset = bumpOffset; // push farther out to avoid overlap
+            break;
+          }
+        }
+        mids.add(midAngle);
+      }
       sections.add(PieChartSectionData(
         value: s.duration,
         color: s.color,
         title: s.title,
         titleStyle: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w600),
+        titlePositionPercentageOffset: tOffset,
         radius: radius,
         borderSide: const BorderSide(color: Colors.transparent, width: 0),
       ));
@@ -711,7 +734,7 @@ class _HomeScreen extends State<HomeScreen> {
         color: Colors.black,
         backgroundColor: Colors.transparent,
         buttonBackgroundColor: Colors.black,
-        animationDuration: Duration(milliseconds: 400),
+        animationDuration: Duration(milliseconds: 500),
         items: items,
         index: index, 
         onTap: (index) => setState(() => this.index = index), // Handle navigation tap
@@ -855,7 +878,7 @@ class _HomeScreen extends State<HomeScreen> {
                     trailing: PopupMenuButton<String>(
                       tooltip: 'More',
                       color: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       icon: const Icon(Icons.more_vert, color: Colors.black45),
                       onSelected: (value) async {
                         if (value == 'edit') {
