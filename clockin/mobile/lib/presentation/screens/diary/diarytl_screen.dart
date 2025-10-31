@@ -14,6 +14,7 @@ class _DiarytlScreenState extends State<DiarytlScreen> {
   bool _loading = true;
   String? _error;
   String _currentUserId = '';
+  String _profilePicture = '';
 
   @override
   void initState() {
@@ -31,6 +32,7 @@ class _DiarytlScreenState extends State<DiarytlScreen> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
       _currentUserId = prefs.getString('userId') ?? '';
+      _profilePicture = prefs.getString('profilePicture') ?? '';
       
       final posts = await ApiService.getPosts(token);
       setState(() {
@@ -171,12 +173,19 @@ class _DiarytlScreenState extends State<DiarytlScreen> {
                                   child: Row(
                                     children: [
                                       CircleAvatar(
-                                        backgroundColor: Colors.black,
+                                        backgroundColor: Colors.grey[300],
                                         radius: 20,
-                                        child: Text(
-                                          username[0].toUpperCase(),
-                                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                                        ),
+                                        backgroundImage: _profilePicture.isNotEmpty && 
+                                                       post['userId']?.toString() == _currentUserId
+                                            ? NetworkImage(_profilePicture)
+                                            : null,
+                                        child: _profilePicture.isEmpty || 
+                                               post['userId']?.toString() != _currentUserId
+                                            ? Text(
+                                                username[0].toUpperCase(),
+                                                style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                                              )
+                                            : null,
                                       ),
                                       const SizedBox(width: 12),
                                       Expanded(

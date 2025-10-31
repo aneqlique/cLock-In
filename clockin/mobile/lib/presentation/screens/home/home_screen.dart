@@ -7,6 +7,7 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:clockin/core/services/api_service.dart';
+import 'package:clockin/core/services/notifications_service.dart';
 import 'package:clockin/presentation/screens/home/task_list_view.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -70,6 +71,8 @@ class _HomeScreen extends State<HomeScreen> {
     final startCtrl = TextEditingController(text: _formatTOD(TimeOfDay(hour: t.start.hour, minute: t.start.minute)));
     final endCtrl = TextEditingController(text: _formatTOD(TimeOfDay(hour: t.end.hour % 24, minute: t.end.minute)));
     String category = t.category; // Already capitalized
+    bool alarmEnabled = t.alarmEnabled;
+    int alarmMinutes = t.alarmMinutes;
 
     final updated = await showModalBottomSheet<bool>(
       context: context,
@@ -77,15 +80,17 @@ class _HomeScreen extends State<HomeScreen> {
       backgroundColor: Colors.black,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Edit Task', style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700, color: Colors.white)),
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('Edit Task', style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700, color: Colors.white)),
                 const SizedBox(height: 14),
                 TextField(
                   controller: titleCtrl,
@@ -183,6 +188,69 @@ class _HomeScreen extends State<HomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                // Alarm Settings
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white10,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: const [
+                          Icon(Icons.alarm, color: Colors.amber, size: 20),
+                          SizedBox(width: 8),
+                          Text('Alarm', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                        ],
+                      ),
+                      SwitchListTile(
+                        title: const Text('Set Alarm', style: TextStyle(color: Colors.white)),
+                        subtitle: const Text('Get notified before task ends', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                        value: alarmEnabled,
+                        onChanged: (value) {
+                          setModalState(() => alarmEnabled = value);
+                        },
+                        activeColor: Colors.amber,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      if (alarmEnabled) ...[
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<int>(
+                          value: alarmMinutes,
+                          dropdownColor: Colors.black,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            labelText: 'Remind me before',
+                            labelStyle: const TextStyle(color: Colors.white70),
+                            filled: true,
+                            fillColor: Colors.white10,
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: Colors.white24),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: Colors.white60),
+                            ),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 5, child: Text('5 minutes before')),
+                            DropdownMenuItem(value: 10, child: Text('10 minutes before')),
+                            DropdownMenuItem(value: 30, child: Text('30 minutes before')),
+                            DropdownMenuItem(value: 60, child: Text('1 hour before')),
+                          ],
+                          onChanged: (value) {
+                            setModalState(() => alarmMinutes = value ?? 10);
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -213,7 +281,16 @@ class _HomeScreen extends State<HomeScreen> {
                           'category': category.toLowerCase(),
                           'timeRange': '$startStr-$endStr',
                           'description': descCtrl.text.trim(),
+                          'alarm': {
+                            'enabled': alarmEnabled,
+                            'minutesBefore': alarmMinutes,
+                          },
                         });
+                        
+                        // Schedule alarm if enabled
+                        if (alarmEnabled) {
+                          _scheduleTaskAlarm(t.id ?? '', title, end, alarmMinutes);
+                        }
                         setState(() {
                           final i = _tasks.indexOf(t);
                           final oldStatus = t.status;
@@ -227,6 +304,8 @@ class _HomeScreen extends State<HomeScreen> {
                               start: start,
                               end: end,
                               status: oldStatus,
+                              alarmEnabled: alarmEnabled,
+                              alarmMinutes: alarmMinutes,
                             );
                           }
                         });
@@ -241,9 +320,11 @@ class _HomeScreen extends State<HomeScreen> {
                     child: const Text('Save Changes'),
                   ),
                 ),
-              ],
-            ),
-          ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -278,8 +359,13 @@ class _HomeScreen extends State<HomeScreen> {
     final now = DateTime.now();
     for (var i = 0; i < _tasks.length; i++) {
       final t = _tasks[i];
+      // Only consider tasks that are not completed
+      if (t.status == 'completed') continue;
+      
       final start = t.start;
-      final end = start.add(Duration(minutes: t.durationMinutes));
+      final end = t.end; // Use the actual end time, not calculated
+      
+      // Check if current time is within the task's time range
       if (now.isAfter(start) && now.isBefore(end)) return i;
     }
     return -1;
@@ -305,7 +391,7 @@ class _HomeScreen extends State<HomeScreen> {
       final isCurrent = _tasks.indexOf(t) == ci;
       final startMin = _minutesSinceMidnight(t.start).toDouble();
       final endMin = _minutesSinceMidnight(t.end).toDouble();
-      final clr = (isCurrent && t.status != 'completed') ? const Color(0xFF3A3A3A) : Colors.transparent;
+      final clr = (isCurrent && t.status != 'completed') ? const Color(0xFF4A4A4A) : Colors.transparent;
       final lbl = t.status == 'completed' ? '' : t.title;
       if (t.end.day != t.start.day) {
         final dur = t.durationMinutes.toDouble();
@@ -638,6 +724,16 @@ class _HomeScreen extends State<HomeScreen> {
           final timeRange = (m['timeRange'] ?? '').toString();
           final description = (m['description'] ?? '').toString();
           final status = (m['status'] ?? 'pending').toString();
+          
+          // Parse alarm data
+          bool alarmEnabled = false;
+          int alarmMinutes = 10;
+          if (m['alarm'] != null && m['alarm'] is Map) {
+            final alarm = m['alarm'] as Map;
+            alarmEnabled = alarm['enabled'] ?? false;
+            alarmMinutes = alarm['minutesBefore'] ?? 10;
+          }
+          
           final parts = timeRange.split('-');
           if (parts.length == 2) {
             final s = _parse24ToDateToday(parts[0].trim());
@@ -654,6 +750,8 @@ class _HomeScreen extends State<HomeScreen> {
                 start: s,
                 end: e,
                 status: status,
+                alarmEnabled: alarmEnabled,
+                alarmMinutes: alarmMinutes,
               ));
             }
           }
@@ -664,6 +762,9 @@ class _HomeScreen extends State<HomeScreen> {
           ..clear()
           ..addAll(loaded);
       });
+      
+      // Refresh task list view to show updated completed tasks
+      _refreshTaskListView();
     } catch (_) {
       // ignore load errors for now
     }
@@ -679,12 +780,52 @@ class _HomeScreen extends State<HomeScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
-      await ApiService.updateTask(token, id, {'status': t.status});
+      
+      // Add completedAt timestamp when completing task
+      final updateData = {'status': t.status};
+      if (completed) {
+        updateData['completedAt'] = DateTime.now().toIso8601String();
+      }
+      
+      await ApiService.updateTask(token, id, updateData);
+      
+      // Refresh task list view to show completed tasks
+      _refreshTaskListView();
     } catch (_) {
       // revert on failure
       setState(() {
         t.status = old;
       });
+    }
+  }
+  
+  void _refreshTaskListView() {
+    // This method will trigger a refresh when the user navigates to task list view
+    // The actual refresh happens in TaskListView's initState and when user pulls to refresh
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        // Force a rebuild to update any listeners
+        setState(() {});
+      }
+    });
+  }
+  
+  void _scheduleTaskAlarm(String taskId, String taskTitle, DateTime taskEnd, int minutesBefore) {
+    // Calculate alarm time
+    final alarmTime = taskEnd.subtract(Duration(minutes: minutesBefore));
+    
+    // Only schedule if alarm time is in the future
+    if (alarmTime.isAfter(DateTime.now())) {
+      // Use the notification service to schedule the alarm
+      NotificationService.scheduleTaskReminder(
+        taskId: taskId,
+        taskTitle: taskTitle,
+        reminderTime: alarmTime,
+      );
+      
+      print('Alarm scheduled for "$taskTitle" at $alarmTime (${minutesBefore} minutes before end)');
+    } else {
+      print('Alarm time $alarmTime is in the past, not scheduling');
     }
   }
 
@@ -799,7 +940,9 @@ class _HomeScreen extends State<HomeScreen> {
                             ),
                           ),
                         ),
-                        Positioned.fill(child: _ClockOverlay()),
+                        Positioned.fill(child: _ClockOverlay(
+                          currentTask: currentIdx >= 0 ? _tasks[currentIdx] : null,
+                        )),
                       ],
                     ),
                   ),
@@ -859,13 +1002,23 @@ class _HomeScreen extends State<HomeScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                       ),
                     ),
-                    title: Text(
-                      t.title,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        decoration: t.status == 'completed' ? TextDecoration.lineThrough : TextDecoration.none,
-                        color: t.status == 'completed' ? Colors.black54 : Colors.black,
-                      ),
+                    title: Row(
+                      children: [
+                        if (t.alarmEnabled) ...[
+                          const Icon(Icons.alarm, size: 16, color: Colors.black54),
+                          const SizedBox(width: 6),
+                        ],
+                        Expanded(
+                          child: Text(
+                            t.title,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              decoration: t.status == 'completed' ? TextDecoration.lineThrough : TextDecoration.none,
+                              color: t.status == 'completed' ? Colors.black54 : Colors.black,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     subtitle: Text(
                       '${t.category} | ${_formatTime(t.start)} - ${_formatTime(t.end)}\n${t.description}',
@@ -1024,8 +1177,21 @@ class _Task {
   final DateTime start;
   final DateTime end;
   String status;
+  bool alarmEnabled;
+  int alarmMinutes;
   int get durationMinutes => end.difference(start).inMinutes;
-  _Task({this.id, required this.title, required this.category, required this.description, required this.color, required this.start, required this.end, this.status = 'pending'});
+  _Task({
+    this.id, 
+    required this.title, 
+    required this.category, 
+    required this.description, 
+    required this.color, 
+    required this.start, 
+    required this.end, 
+    this.status = 'pending',
+    this.alarmEnabled = false,
+    this.alarmMinutes = 10,
+  });
 }
 
 class _ChartSeg {
@@ -1055,19 +1221,33 @@ class _HhMmFormatter extends TextInputFormatter {
 }
 
 class _ClockOverlay extends StatelessWidget {
+  final _Task? currentTask;
+  
+  const _ClockOverlay({this.currentTask});
+  
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: _ClockPainter(),
+      painter: _ClockPainter(currentTask: currentTask),
     );
   }
 }
 
 class _ClockPainter extends CustomPainter {
+  final _Task? currentTask;
+  
+  _ClockPainter({this.currentTask});
+  
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2 - 8;
+    
+    // Draw active task shading first (behind other elements)
+    if (currentTask != null && currentTask!.status != 'completed') {
+      _drawActiveTaskShade(canvas, center, radius);
+    }
+    
     final tickPaint = Paint()
       ..color = Colors.white70
       ..strokeWidth = 1;
@@ -1111,6 +1291,58 @@ class _ClockPainter extends CustomPainter {
 
     final hub = Paint()..color = Colors.white;
     canvas.drawCircle(center, 3, hub);
+  }
+  
+  void _drawActiveTaskShade(Canvas canvas, Offset center, double radius) {
+    if (currentTask == null) return;
+    
+    final task = currentTask!;
+    const totalMinutes = 1440.0;
+    
+    // Calculate task start and end minutes since midnight
+    final startMinutes = _minutesSinceMidnight(task.start);
+    final endMinutes = _minutesSinceMidnight(task.end);
+    
+    // Convert to angles (0 degrees = 12 o'clock, clockwise)
+    final startAngle = (startMinutes / totalMinutes) * 2 * math.pi - math.pi / 2;
+    final endAngle = (endMinutes / totalMinutes) * 2 * math.pi - math.pi / 2;
+    
+    // Calculate sweep angle, handling day wrap-around
+    double sweepAngle;
+    if (task.end.day != task.start.day) {
+      // Task spans across days
+      sweepAngle = (totalMinutes - startMinutes + endMinutes) / totalMinutes * 2 * math.pi;
+    } else {
+      sweepAngle = (endMinutes - startMinutes) / totalMinutes * 2 * math.pi;
+    }
+    
+    // Create gradient paint for the active task shade using app theme colors
+    final shadePaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          Colors.black.withOpacity(0.3),
+          Colors.black.withOpacity(0.2),
+          Colors.black.withOpacity(0.1),
+        ],
+        stops: const [0.3, 0.7, 1.0],
+      ).createShader(Rect.fromCircle(center: center, radius: radius))
+      ..style = PaintingStyle.fill;
+    
+    // Draw the active task arc shade (larger area)
+    final rect = Rect.fromCircle(center: center, radius: radius - 10);
+    canvas.drawArc(rect, startAngle, sweepAngle, true, shadePaint);
+    
+    // Add a border highlight using app theme color
+    final borderPaint = Paint()
+      ..color = Colors.black.withOpacity(0.5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
+    
+    canvas.drawArc(rect, startAngle, sweepAngle, false, borderPaint);
+  }
+  
+  int _minutesSinceMidnight(DateTime dt) {
+    return dt.hour * 60 + dt.minute;
   }
 
   @override

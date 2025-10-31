@@ -29,6 +29,11 @@ class _TaskListViewState extends State<TaskListView> {
     super.initState();
     _fetch();
   }
+  
+  // Add this method to allow refresh from home screen
+  void refreshTasks() {
+    _fetch();
+  }
 
   @override
   void dispose() {
@@ -66,42 +71,39 @@ class _TaskListViewState extends State<TaskListView> {
   }
 
   List<Map<String, dynamic>> _filterByDate(List<Map<String, dynamic>> tasks, DateTime? date) {
-    final targetDate = date ?? DateTime.now();
+    // Use local time to ensure we're comparing in the correct timezone
+    final now = DateTime.now();
+    final targetDate = date ?? now;
     
     return tasks.where((task) {
       // Check if task was completed on target date
       final completedAt = task['completedAt'];
-      if (completedAt == null) {
-        // Fallback to updatedAt if completedAt doesn't exist
-        final updatedAt = task['updatedAt'];
-        if (updatedAt == null) return false;
-        
-        final taskDate = DateTime.parse(updatedAt.toString());
-        if (_isSameDay(taskDate, targetDate)) return true;
-      } else {
-        final taskDate = DateTime.parse(completedAt.toString());
-        if (_isSameDay(taskDate, targetDate)) return true;
+      if (completedAt != null) {
+        try {
+          final taskDate = DateTime.parse(completedAt.toString()).toLocal();
+          if (_isSameDay(taskDate, targetDate)) return true;
+        } catch (e) {
+          // If parsing fails, continue to fallback
+        }
       }
       
-      // Also check if task's timeRange spans the target date
+      // Fallback to updatedAt if completedAt doesn't exist or parsing failed
+      final updatedAt = task['updatedAt'];
+      if (updatedAt != null) {
+        try {
+          final taskDate = DateTime.parse(updatedAt.toString()).toLocal();
+          if (_isSameDay(taskDate, targetDate)) return true;
+        } catch (e) {
+          // If parsing fails, continue
+        }
+      }
+      
+      // Special handling for tasks that span today to tomorrow
       final timeRange = task['timeRange']?.toString() ?? '';
-      if (timeRange.contains('-') && timeRange.contains('to')) {
-        // Check if timeRange includes date info (e.g., "today to tomorrow")
-        final lowerRange = timeRange.toLowerCase();
-        if (lowerRange.contains('today') || lowerRange.contains('tomorrow')) {
-          final completedDate = completedAt != null 
-              ? DateTime.parse(completedAt.toString())
-              : (task['updatedAt'] != null ? DateTime.parse(task['updatedAt'].toString()) : DateTime.now());
-          
-          final today = DateTime.now();
-          final tomorrow = today.add(const Duration(days: 1));
-          
-          if (lowerRange.contains('tomorrow')) {
-            // If task is "today to tomorrow" and target is today or tomorrow, include it
-            if (_isSameDay(completedDate, today) && (_isSameDay(targetDate, today) || _isSameDay(targetDate, tomorrow))) {
-              return true;
-            }
-          }
+      if (timeRange.toLowerCase().contains('today') && timeRange.toLowerCase().contains('tomorrow')) {
+        // If task spans today-tomorrow and target date is today or tomorrow, include it
+        if (_isSameDay(targetDate, now) || _isSameDay(targetDate, now.add(const Duration(days: 1)))) {
+          return true;
         }
       }
       
