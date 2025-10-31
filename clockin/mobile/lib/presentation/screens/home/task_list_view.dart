@@ -16,9 +16,11 @@ class TaskListView extends StatefulWidget {
 
 class _TaskListViewState extends State<TaskListView> {
   List<Map<String, dynamic>> _completed = [];
+  List<Map<String, dynamic>> _allCompleted = [];
   bool _loading = true;
   String? _error;
   String _query = '';
+  DateTime? _selectedDate;
   final FocusNode _searchFocus = FocusNode();
   final TextEditingController _searchCtrl = TextEditingController();
 
@@ -45,8 +47,12 @@ class _TaskListViewState extends State<TaskListView> {
       final token = prefs.getString('token') ?? '';
       final list = await ApiService.getTasks(token);
       final items = list.map<Map<String, dynamic>>((e) => (e as Map).cast<String, dynamic>()).toList();
+      final completed = items.where((m) => (m['status'] ?? 'pending') == 'completed').toList();
+      
       setState(() {
-        _completed = items.where((m) => (m['status'] ?? 'pending') == 'completed').toList();
+        _allCompleted = completed;
+        // Filter to show only today's tasks by default
+        _completed = _filterByDate(completed, _selectedDate);
       });
     } catch (e) {
       setState(() {
@@ -57,6 +63,79 @@ class _TaskListViewState extends State<TaskListView> {
         _loading = false;
       });
     }
+  }
+
+  List<Map<String, dynamic>> _filterByDate(List<Map<String, dynamic>> tasks, DateTime? date) {
+    final targetDate = date ?? DateTime.now();
+    
+    return tasks.where((task) {
+      // Check if task was completed on target date
+      final completedAt = task['completedAt'];
+      if (completedAt == null) {
+        // Fallback to updatedAt if completedAt doesn't exist
+        final updatedAt = task['updatedAt'];
+        if (updatedAt == null) return false;
+        
+        final taskDate = DateTime.parse(updatedAt.toString());
+        if (_isSameDay(taskDate, targetDate)) return true;
+      } else {
+        final taskDate = DateTime.parse(completedAt.toString());
+        if (_isSameDay(taskDate, targetDate)) return true;
+      }
+      
+      // Also check if task's timeRange spans the target date
+      final timeRange = task['timeRange']?.toString() ?? '';
+      if (timeRange.contains('-') && timeRange.contains('to')) {
+        // Check if timeRange includes date info (e.g., "today to tomorrow")
+        final lowerRange = timeRange.toLowerCase();
+        if (lowerRange.contains('today') || lowerRange.contains('tomorrow')) {
+          final completedDate = completedAt != null 
+              ? DateTime.parse(completedAt.toString())
+              : (task['updatedAt'] != null ? DateTime.parse(task['updatedAt'].toString()) : DateTime.now());
+          
+          final today = DateTime.now();
+          final tomorrow = today.add(const Duration(days: 1));
+          
+          if (lowerRange.contains('tomorrow')) {
+            // If task is "today to tomorrow" and target is today or tomorrow, include it
+            if (_isSameDay(completedDate, today) && (_isSameDay(targetDate, today) || _isSameDay(targetDate, tomorrow))) {
+              return true;
+            }
+          }
+        }
+      }
+      
+      return false;
+    }).toList();
+  }
+
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    return date1.year == date2.year &&
+           date1.month == date2.month &&
+           date1.day == date2.day;
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    
+    if (picked != null) {
+      setState(() {
+        _selectedDate = picked;
+        _completed = _filterByDate(_allCompleted, _selectedDate);
+      });
+    }
+  }
+
+  void _resetToToday() {
+    setState(() {
+      _selectedDate = null;
+      _completed = _filterByDate(_allCompleted, null);
+    });
   }
 
   Future<void> _delete(String id) async {
@@ -155,10 +234,11 @@ class _TaskListViewState extends State<TaskListView> {
         const SizedBox(width: 12),
         ],
     ),
-    actions: const [
-        Padding(
-        padding: EdgeInsets.only(right: 12.0),
-        child: Icon(Icons.calendar_month_rounded, color: Colors.black),
+    actions: [
+        IconButton(
+          icon: const Icon(Icons.calendar_month_rounded, color: Colors.black),
+          onPressed: _pickDate,
+          tooltip: 'Select Date',
         ),
     ],
     ),  
@@ -178,12 +258,31 @@ class _TaskListViewState extends State<TaskListView> {
                     slivers: [
                       SliverToBoxAdapter(
                         child: Column(
-                          children: const [
-                            Divider(height: 1, color: Color(0xFFE5E5E5)),
-                            SizedBox(height: 10),
-                            Text("Today's Completed Tasks!",
-                                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
-                            SizedBox(height: 10),
+                          children: [
+                            const Divider(height: 1, color: Color(0xFFE5E5E5)),
+                            const SizedBox(height: 10),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  _selectedDate == null
+                                      ? "Today's Completed Tasks!"
+                                      : "${_selectedDate!.month}/${_selectedDate!.day}/${_selectedDate!.year} Tasks",
+                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+                                ),
+                                if (_selectedDate != null) ...[
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    icon: const Icon(Icons.refresh, size: 20),
+                                    onPressed: _resetToToday,
+                                    tooltip: 'Reset to Today',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 10),
                           ],
                         ),
                       ),
@@ -311,13 +410,28 @@ class _TaskListViewState extends State<TaskListView> {
 
   List<Map<String, dynamic>> _filtered() {
     if (_query.isEmpty) return _completed;
+    
+    // When searching, search across ALL completed tasks (all dates)
     final q = _query.toLowerCase();
-    return _completed.where((m) {
+    return _allCompleted.where((m) {
       final t = (m['taskTitle'] ?? '').toString().toLowerCase();
       final c = (m['category'] ?? '').toString().toLowerCase();
       final d = (m['description'] ?? '').toString().toLowerCase();
       final tr = (m['timeRange'] ?? '').toString().toLowerCase();
-      return t.contains(q) || c.contains(q) || d.contains(q) || tr.contains(q);
+      
+      // Also search by date
+      final completedAt = m['completedAt'] ?? m['updatedAt'];
+      String dateStr = '';
+      if (completedAt != null) {
+        try {
+          final date = DateTime.parse(completedAt.toString());
+          dateStr = '${date.month}/${date.day}/${date.year}'.toLowerCase();
+        } catch (e) {
+          // ignore
+        }
+      }
+      
+      return t.contains(q) || c.contains(q) || d.contains(q) || tr.contains(q) || dateStr.contains(q);
     }).toList();
   }
 

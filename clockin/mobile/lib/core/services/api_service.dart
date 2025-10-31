@@ -155,4 +155,83 @@ class ApiService {
       throw Exception('Failed to upload images: ${res.statusCode} $body');
     }
   }
+
+  // Get all public posts
+  static Future<List<dynamic>> getPosts(String token) async {
+    if (token.isEmpty) {
+      throw Exception('Failed to get posts: missing token (not logged in)');
+    }
+
+    final res = await http.get(
+      Uri.parse('$_baseUrl/posts'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as List;
+    } else {
+      throw Exception('Failed to load posts: ${res.statusCode}');
+    }
+  }
+
+  // Toggle like on a post
+  static Future<Map<String, dynamic>> toggleLike(String token, String postId) async {
+    if (token.isEmpty) {
+      throw Exception('Failed to toggle like: missing token (not logged in)');
+    }
+
+    final res = await http.post(
+      Uri.parse('$_baseUrl/posts/$postId/like'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } else {
+      throw Exception('Failed to toggle like: ${res.statusCode}');
+    }
+  }
+
+  // Add comment to a post
+  static Future<Map<String, dynamic>> addComment(String token, String postId, String comment) async {
+    if (token.isEmpty) {
+      throw Exception('Failed to add comment: missing token (not logged in)');
+    }
+
+    final res = await http.post(
+      Uri.parse('$_baseUrl/posts/$postId/comment'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'comment': comment}),
+    );
+
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } else {
+      throw Exception('Failed to add comment: ${res.statusCode}');
+    }
+  }
+
+  // Get comments for a post
+  static Future<List<dynamic>> getComments(String token, String postId) async {
+    if (token.isEmpty) {
+      throw Exception('Failed to get comments: missing token (not logged in)');
+    }
+
+    final res = await http.get(
+      Uri.parse('$_baseUrl/posts/$postId/comments'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as List;
+    } else {
+      throw Exception('Failed to load comments: ${res.statusCode}');
+    }
+  }
 }

@@ -12,6 +12,14 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   // address: { type: String, required: true },
   // isActive: { type: Boolean, default: true },
+  profilePicture: { type: String, default: '' },
+  notificationSettings: {
+    enabled: { type: Boolean, default: true },
+    taskReminders: { type: Boolean, default: true },
+    socialInteractions: { type: Boolean, default: true },
+    ringtone: { type: String, default: 'default' },
+  },
+  theme: { type: String, enum: ['light', 'dark', 'system'], default: 'system' },
 });
 
 module.exports = mongoose.model.userSchema || mongoose.model('User', userSchema);

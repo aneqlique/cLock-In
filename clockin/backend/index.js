@@ -7,6 +7,7 @@ const connectDB = require("./config/db");
 const userRoutes = require("./routes/userRoutes");
 const taskRoutes = require("./routes/taskRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
+const postRoutes = require("./routes/postRoutes");
 
 const app = express();
 
@@ -49,6 +50,7 @@ app.use((req, res, next) => {
 app.use("/api/users", userRoutes);
 app.use("/api/tasks", taskRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/posts", postRoutes);
 
 // Error Handling
 app.use((error, req, res, next) => {

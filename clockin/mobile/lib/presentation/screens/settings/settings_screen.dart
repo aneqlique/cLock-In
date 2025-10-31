@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:clockin/core/services/user_service.dart';
+import 'package:clockin/core/services/api_service.dart';
+import 'package:image_picker/image_picker.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -19,9 +22,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _loading = false;
   bool _saving = false;
   bool _editing = false;
+  bool _uploadingImage = false;
 
   String _userId = '';
   String _token = '';
+  String _profilePicture = '';
+  String _theme = 'system';
+  bool _notificationsEnabled = true;
+  bool _taskReminders = true;
+  bool _socialInteractions = true;
+  String _ringtone = 'default';
+
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -47,8 +59,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _lastNameCtrl.text = user['lastName'] ?? '';
       _usernameCtrl.text = user['username'] ?? '';
       _emailCtrl.text = user['email'] ?? '';
+      _profilePicture = user['profilePicture'] ?? '';
+      _theme = user['theme'] ?? 'system';
+      final notifSettings = user['notificationSettings'];
+      if (notifSettings != null && notifSettings is Map) {
+        _notificationsEnabled = notifSettings['enabled'] ?? true;
+        _taskReminders = notifSettings['taskReminders'] ?? true;
+        _socialInteractions = notifSettings['socialInteractions'] ?? true;
+        _ringtone = notifSettings['ringtone'] ?? 'default';
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _pickAndUploadProfilePicture() async {
+    try {
+      final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery, maxWidth: 800, maxHeight: 800);
+      if (pickedFile == null) return;
+
+      setState(() => _uploadingImage = true);
+      
+      final imageUrl = await ApiService.uploadImages(_token, [File(pickedFile.path)]);
+      if (imageUrl.isEmpty) throw Exception('Failed to upload image');
+
+      final updates = {'profilePicture': imageUrl.first};
+      final res = await UserService().updateUser(token: _token, id: _userId, updates: updates);
+      await UserService().saveUserData({'user': res, 'token': _token});
+      
+      setState(() {
+        _profilePicture = imageUrl.first;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile picture updated')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to upload: ${e.toString()}')));
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingImage = false);
     }
   }
 
@@ -76,6 +127,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _updateSettings(Map<String, dynamic> updates) async {
+    try {
+      final res = await UserService().updateUser(token: _token, id: _userId, updates: updates);
+      await UserService().saveUserData({'user': res, 'token': _token});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update: ${e.toString()}')));
+      }
     }
   }
 

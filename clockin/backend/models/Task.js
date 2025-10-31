@@ -18,6 +18,11 @@ const taskSchema = new mongoose.Schema({
     }
   },
   setPublic: { type: Boolean, default: false },
+  completedAt: { type: Date },
+  alarm: {
+    enabled: { type: Boolean, default: false },
+    minutesBefore: { type: Number, enum: [5, 10, 30, 60], default: 10 },
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model.taskSchema || mongoose.model('Task', taskSchema);

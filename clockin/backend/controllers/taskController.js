@@ -1,4 +1,6 @@
 const Task = require('../models/Task');
+const Post = require('../models/Post');
+const User = require('../models/User');
 
 const getTask = async (req, res) => {
   try {
@@ -34,7 +36,53 @@ const createTask = async (req, res) => {
 
 const updateTask = async (req, res) => {
   try {
-    const updated = await Task.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const taskId = req.params.id;
+    const userId = req.user.id;
+    const updates = req.body;
+    
+    // Set completedAt when status changes to completed
+    if (updates.status === 'completed' && !updates.completedAt) {
+      updates.completedAt = new Date();
+    }
+    
+    const updated = await Task.findByIdAndUpdate(taskId, updates, { new: true });
+    
+    // Handle post creation/deletion based on setPublic flag
+    if (updates.hasOwnProperty('setPublic')) {
+      if (updates.setPublic) {
+        // Create or update post
+        const user = await User.findById(userId);
+        if (user) {
+          let post = await Post.findOne({ taskId });
+          
+          if (post) {
+            // Update existing post
+            post.taskTitle = updated.taskTitle;
+            post.category = updated.category;
+            post.timeRange = updated.timeRange;
+            post.description = updated.description;
+            post.images = updated.images;
+            await post.save();
+          } else {
+            // Create new post
+            await Post.create({
+              userId,
+              taskId,
+              username: user.username,
+              taskTitle: updated.taskTitle,
+              category: updated.category,
+              timeRange: updated.timeRange,
+              description: updated.description,
+              images: updated.images || []
+            });
+          }
+        }
+      } else {
+        // Remove post if it exists
+        await Post.findOneAndDelete({ taskId });
+      }
+    }
+    
     res.json(updated);
 
   } catch (error) {
