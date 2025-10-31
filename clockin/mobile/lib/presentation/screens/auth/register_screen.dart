@@ -56,7 +56,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       await userService.saveUserData(data);
       if (!mounted) return;
       setState(() => _loading = false);
-      Navigator.pushReplacementNamed(context, '/home');
+      Navigator.pushReplacementNamed(context, '/login');
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);

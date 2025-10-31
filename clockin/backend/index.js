@@ -6,6 +6,7 @@ const bodyParser = require("body-parser");
 const connectDB = require("./config/db");
 const userRoutes = require("./routes/userRoutes");
 const taskRoutes = require("./routes/taskRoutes");
+const uploadRoutes = require("./routes/uploadRoutes");
 
 const app = express();
 
@@ -47,6 +48,7 @@ app.use((req, res, next) => {
 // Routes
 app.use("/api/users", userRoutes);
 app.use("/api/tasks", taskRoutes);
+app.use("/api/upload", uploadRoutes);
 
 // Error Handling
 app.use((error, req, res, next) => {

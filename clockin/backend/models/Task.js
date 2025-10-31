@@ -7,6 +7,17 @@ const taskSchema = new mongoose.Schema({
   timeRange: { type: String, required: true },
   description: { type: String },
   status: { type: String, enum: ['pending', 'completed'], default: 'pending' },
+  images: { 
+    type: [String], 
+    default: [],
+    validate: {
+      validator: function(v) {
+        return v.length <= 10;
+      },
+      message: 'Cannot upload more than 10 images per task'
+    }
+  },
+  setPublic: { type: Boolean, default: false },
 }, { timestamps: true });
 
 module.exports = mongoose.model.taskSchema || mongoose.model('Task', taskSchema);

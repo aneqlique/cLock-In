@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import '../config/constants.dart';
 
 class ApiService {
@@ -87,6 +89,70 @@ class ApiService {
     if (res.statusCode != 200) {
       final body = res.body.isNotEmpty ? res.body : '<empty body>';
       throw Exception('Failed to delete task: ${res.statusCode} $body');
+    }
+  }
+
+  static Future<List<String>> uploadImages(String token, List<File> images) async {
+    if (token.isEmpty) {
+      throw Exception('Failed to upload images: missing token (not logged in)');
+    }
+    if (images.isEmpty) {
+      return [];
+    }
+    if (images.length > 10) {
+      throw Exception('Cannot upload more than 10 images');
+    }
+
+    final request = http.MultipartRequest('POST', Uri.parse('$_baseUrl/upload'));
+    request.headers['Authorization'] = 'Bearer $token';
+
+    for (var image in images) {
+      final stream = http.ByteStream(image.openRead());
+      final length = await image.length();
+      
+      // Determine content type from file extension
+      String? mimeType;
+      final extension = image.path.toLowerCase().split('.').last;
+      switch (extension) {
+        case 'jpg':
+        case 'jpeg':
+          mimeType = 'image/jpeg';
+          break;
+        case 'png':
+          mimeType = 'image/png';
+          break;
+        case 'gif':
+          mimeType = 'image/gif';
+          break;
+        case 'webp':
+          mimeType = 'image/webp';
+          break;
+        default:
+          mimeType = 'image/jpeg'; // Default fallback
+      }
+      
+      final multipartFile = http.MultipartFile(
+        'images',
+        stream,
+        length,
+        filename: image.path.split('/').last,
+        contentType: MediaType.parse(mimeType),
+      );
+      request.files.add(multipartFile);
+    }
+
+    final streamedResponse = await request.send();
+    final res = await http.Response.fromStream(streamedResponse);
+
+    if (res.statusCode == 200) {
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map && decoded['images'] is List) {
+        return (decoded['images'] as List).map((e) => e.toString()).toList();
+      }
+      return [];
+    } else {
+      final body = res.body.isNotEmpty ? res.body : '<empty body>';
+      throw Exception('Failed to upload images: ${res.statusCode} $body');
     }
   }
 }

@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/painting.dart';
+import 'package:image_picker/image_picker.dart' show XFile, ImagePicker;
 import 'package:clockin/core/services/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
  
@@ -201,6 +205,11 @@ class _TaskListViewState extends State<TaskListView> {
                               final category = (m['category'] ?? '').toString();
                               final timeRange = (m['timeRange'] ?? '').toString();
                               final description = (m['description'] ?? '').toString();
+                              final images = m['images'] != null && m['images'] is List 
+                                  ? (m['images'] as List).map((e) => e.toString()).toList() 
+                                  : <String>[];
+                              final hasImage = images.isNotEmpty;
+                              
                               return InkWell(
                                 onTap: () {
                                   _openTaskModal(m);
@@ -213,39 +222,74 @@ class _TaskListViewState extends State<TaskListView> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      const SizedBox(height: 12),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                                        child: Text(title,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.w800,
-                                                fontSize: 16)),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                                        child: Text(
-                                          _toTitleCase(category),
-                                          style: const TextStyle(color: Colors.white70, fontStyle: FontStyle.italic),
+                                      if (hasImage)
+                                        ClipRRect(
+                                          borderRadius: const BorderRadius.only(
+                                            topLeft: Radius.circular(18),
+                                            topRight: Radius.circular(18),
+                                          ),
+                                          child: Image.network(
+                                            images.first,
+                                            height: 120,
+                                            width: double.infinity,
+                                            fit: BoxFit.cover,
+                                            loadingBuilder: (context, child, loadingProgress) {
+                                              if (loadingProgress == null) return child;
+                                              return Container(
+                                                height: 120,
+                                                color: Colors.grey[800],
+                                                child: const Center(
+                                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                                ),
+                                              );
+                                            },
+                                            errorBuilder: (context, error, stackTrace) {
+                                              return Container(
+                                                height: 120,
+                                                color: Colors.grey[800],
+                                                child: const Center(
+                                                  child: Icon(Icons.image_not_supported, color: Colors.white54),
+                                                ),
+                                              );
+                                            },
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                                        child: Text(timeRange,
-                                            style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w600)),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                                        child: Text(
-                                          description,
-                                          maxLines: 4,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(color: Colors.white70),
+                                      Expanded(
+                                        child: Padding(
+                                          padding: const EdgeInsets.fromLTRB(15.0, 15.0, 15.0, 19.0),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(title,
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontWeight: FontWeight.w800,
+                                                      fontSize: 16)),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                _toTitleCase(category),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(color: Colors.white70, fontStyle: FontStyle.italic),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(timeRange,
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w600)),
+                                              const SizedBox(height: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  description,
+                                                  maxLines: hasImage ? 2 : 4,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ],
@@ -331,7 +375,10 @@ class _TaskModalSheetState extends State<_TaskModalSheet> {
   late TextEditingController descCtrl;
   late TextEditingController startCtrl;
   late TextEditingController endCtrl;
-  bool setPublic = false;
+  late bool setPublic;
+  final ImagePicker _picker = ImagePicker();
+  List<File> _selectedImages = [];
+  List<String> _existingImageUrls = [];
 
   @override
   void initState() {
@@ -342,11 +389,82 @@ class _TaskModalSheetState extends State<_TaskModalSheet> {
     final description = (widget.data['description'] ?? '').toString();
     final timeRange = (widget.data['timeRange'] ?? '').toString();
     cat = (widget.data['category'] ?? 'self').toString();
+    setPublic = (widget.data['setPublic'] ?? false) as bool;
     final parts = timeRange.split('-');
     titleCtrl = TextEditingController(text: title);
     descCtrl = TextEditingController(text: description);
     startCtrl = TextEditingController(text: parts.isNotEmpty ? parts[0].trim() : '');
     endCtrl = TextEditingController(text: parts.length > 1 ? parts[1].trim() : '');
+    
+    // Load existing images
+    if (widget.data['images'] != null && widget.data['images'] is List) {
+      _existingImageUrls = (widget.data['images'] as List).map((e) => e.toString()).toList();
+    }
+  }
+
+  Future<void> _pickImages() async {
+    try {
+      final totalImages = _existingImageUrls.length + _selectedImages.length;
+      if (totalImages >= 10) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Cannot upload more than 10 images per task')),
+          );
+        }
+        return;
+      }
+
+      final List<XFile>? pickedFiles = await _picker.pickMultiImage();
+      if (pickedFiles != null && pickedFiles.isNotEmpty) {
+        final availableSlots = 10 - totalImages;
+        final filesToAdd = pickedFiles.take(availableSlots).toList();
+        
+        if (pickedFiles.length > availableSlots) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Only added $availableSlots images. Maximum is 10 per task.')),
+            );
+          }
+        }
+        
+        setState(() {
+          _selectedImages.addAll(filesToAdd.map((file) => File(file.path)).toList());
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to pick images: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  void _removeImage(int index) {
+    setState(() {
+      _selectedImages.removeAt(index);
+    });
+  }
+
+  void _removeExistingImage(int index) {
+    setState(() {
+      _existingImageUrls.removeAt(index);
+    });
+  }
+
+  Future<ImageInfo> _loadImage(ImageProvider imageProvider) {
+    final completer = Completer<ImageInfo>();
+    final stream = imageProvider.resolve(const ImageConfiguration());
+    final listener = ImageStreamListener((info, _) {
+      if (!completer.isCompleted) {
+        completer.complete(info);
+      }
+    });
+    stream.addListener(listener);
+    completer.future.then((_) {
+      stream.removeListener(listener);
+    });
+    return completer.future;
   }
 
   @override
@@ -364,12 +482,15 @@ class _TaskModalSheetState extends State<_TaskModalSheet> {
     return SafeArea(
       child: AnimatedPadding(
         duration: const Duration(milliseconds: 120),
-        padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+        padding: EdgeInsets.only(
+          top: 68,
+          bottom: media.viewInsets.bottom,
+        ),
         child: Center(
           child: ConstrainedBox(
             constraints: BoxConstraints(
               maxWidth: media.size.width * 0.94,
-              maxHeight: media.size.height * 0.9,
+              maxHeight: media.size.height * 0.85,
             ),
             child: Material(
               color: const Color(0xFF1E1E1E),
@@ -398,15 +519,33 @@ class _TaskModalSheetState extends State<_TaskModalSheet> {
                             try {
                               final prefs = await SharedPreferences.getInstance();
                               final token = prefs.getString('token') ?? '';
+                              
+                              // Upload new images if any
+                              List<String> uploadedUrls = [];
+                              if (_selectedImages.isNotEmpty) {
+                                uploadedUrls = await ApiService.uploadImages(token, _selectedImages);
+                              }
+                              
+                              // Combine existing and new image URLs
+                              final allImages = [..._existingImageUrls, ...uploadedUrls];
+                              
                               final updates = {
                                 'taskTitle': titleCtrl.text.trim(),
                                 'category': cat,
                                 'timeRange': '${startCtrl.text.trim()}-${endCtrl.text.trim()}',
                                 'description': descCtrl.text.trim(),
+                                'images': allImages,
+                                'setPublic': setPublic,
                               };
                               final updated = await ApiService.updateTask(token, id, updates);
                               widget.onUpdated(updated.cast<String, dynamic>());
-                              if (mounted) setState(() => editable = false);
+                              if (mounted) {
+                                setState(() {
+                                  editable = false;
+                                  _selectedImages.clear();
+                                  _existingImageUrls = allImages;
+                                });
+                              }
                             } catch (e) {
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Update failed: ${e.toString()}')));
@@ -500,59 +639,180 @@ class _TaskModalSheetState extends State<_TaskModalSheet> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             editable
-                                ? TextField(controller: descCtrl, maxLines: 6, style: const TextStyle(color: Colors.white), decoration: _dec('Description'))
+                                ? Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      TextField(
+                                        controller: descCtrl,
+                                        maxLines: 6,
+                                        style: const TextStyle(color: Colors.white),
+                                        decoration: _dec('Description'),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Row(
+                                        children: [
+                                          Theme(
+                                            data: Theme.of(context).copyWith(
+                                              switchTheme: const SwitchThemeData(
+                                                thumbColor: MaterialStatePropertyAll(Colors.black),
+                                                trackColor: MaterialStatePropertyAll(Color(0xFFCCCCCC)),
+                                              ),
+                                            ),
+                                            child: Switch(
+                                              value: setPublic,
+                                              onChanged: (v) => setState(() => setPublic = v),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          const Text('Set as public', style: TextStyle(color: Colors.white)),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 16),
+                                      OutlinedButton.icon(
+                                        onPressed: _pickImages,
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: Colors.white,
+                                          backgroundColor: Color(0xFF555555),
+                                          padding: const EdgeInsets.symmetric(vertical: 12),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                        ),
+                                        icon: const Icon(Icons.add_photo_alternate, size: 20),
+                                        label: const Text('Add Images', style: TextStyle(fontSize: 14)),
+                                      ),
+                                      const SizedBox(height: 16),
+                                    ],
+                                  )
                                 : Text(descCtrl.text, style: const TextStyle(color: Colors.white70)),
                             const SizedBox(height: 16),
-                            GridView.builder(
-                              itemCount: 3,
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                mainAxisSpacing: 12,
-                                crossAxisSpacing: 12,
-                                childAspectRatio: 1.3,
-                              ),
-                              itemBuilder: (_, i) => Container(
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF4A4A4A),
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
-                            ),
+                            (_existingImageUrls.isNotEmpty || _selectedImages.isNotEmpty)
+                                ? Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      if (_existingImageUrls.isNotEmpty) ...[
+                                        const Text('', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                        const SizedBox(height: 8),
+                                        GridView.builder(
+                                          itemCount: _existingImageUrls.length,
+                                          shrinkWrap: true,
+                                          physics: const NeverScrollableScrollPhysics(),
+                                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                            crossAxisCount: 2,
+                                            mainAxisSpacing: 12,
+                                            crossAxisSpacing: 12,
+                                            childAspectRatio: 0.75,
+                                          ),
+                                          itemBuilder: (context, index) {
+                                            return Stack(
+                                              children: [
+                                                ClipRRect(
+                                                  borderRadius: BorderRadius.circular(12),
+                                                  child: Image.network(
+                                                    _existingImageUrls[index],
+                                                    fit: BoxFit.cover,
+                                                    width: double.infinity,
+                                                    height: double.infinity,
+                                                    loadingBuilder: (context, child, loadingProgress) {
+                                                      if (loadingProgress == null) return child;
+                                                      return const Center(child: CircularProgressIndicator());
+                                                    },
+                                                    errorBuilder: (context, error, stackTrace) {
+                                                      return Container(
+                                                        color: Colors.grey[800],
+                                                        child: const Center(
+                                                          child: Icon(Icons.error, color: Colors.white54),
+                                                        ),
+                                                      );
+                                                    },
+                                                  ),
+                                                ),
+                                                if (editable)
+                                                  Positioned(
+                                                    top: 4,
+                                                    right: 4,
+                                                    child: GestureDetector(
+                                                      onTap: () => _removeExistingImage(index),
+                                                      child: Container(
+                                                        padding: const EdgeInsets.all(4),
+                                                        decoration: const BoxDecoration(
+                                                          color: Colors.black54,
+                                                          shape: BoxShape.circle,
+                                                        ),
+                                                        child: const Icon(Icons.close, size: 16, color: Colors.white),
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            );
+                                          },
+                                        ),
+                                        const SizedBox(height: 16),
+                                      ],
+                                      if (_selectedImages.isNotEmpty) ...[
+                                        const Text('New Images (not uploaded yet)', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                        const SizedBox(height: 8),
+                                        GridView.builder(
+                                          itemCount: _selectedImages.length,
+                                          shrinkWrap: true,
+                                          physics: const NeverScrollableScrollPhysics(),
+                                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                            crossAxisCount: 2,
+                                            mainAxisSpacing: 12,
+                                            crossAxisSpacing: 12,
+                                            childAspectRatio: 0.75,
+                                          ),
+                                          itemBuilder: (context, index) {
+                                            return Stack(
+                                              children: [
+                                                ClipRRect(
+                                                  borderRadius: BorderRadius.circular(12),
+                                                  child: Image.file(
+                                                    _selectedImages[index],
+                                                    fit: BoxFit.cover,
+                                                    width: double.infinity,
+                                                    height: double.infinity,
+                                                  ),
+                                                ),
+                                                if (editable)
+                                                  Positioned(
+                                                    top: 4,
+                                                    right: 4,
+                                                    child: GestureDetector(
+                                                      onTap: () => _removeImage(index),
+                                                      child: Container(
+                                                        padding: const EdgeInsets.all(4),
+                                                        decoration: const BoxDecoration(
+                                                          color: Colors.black54,
+                                                          shape: BoxShape.circle,
+                                                        ),
+                                                        child: const Icon(Icons.close, size: 16, color: Colors.white),
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ],
+                                  )
+                                : Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 24),
+                                    child: Center(
+                                      child: Text(
+                                        'No images added yet',
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.5),
+                                          fontStyle: FontStyle.italic,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                           ],
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Theme(
-                              data: Theme.of(context).copyWith(
-                                switchTheme: const SwitchThemeData(
-                                  thumbColor: MaterialStatePropertyAll(Colors.black),
-                                  trackColor: MaterialStatePropertyAll(Color(0xFFCCCCCC)),
-                                ),
-                              ),
-                              child: Switch(
-                                value: setPublic,
-                                onChanged: (v) => setState(() => setPublic = v),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Text('Set as public'),
-                          ],
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: () {},
-                          style: OutlinedButton.styleFrom(foregroundColor: Colors.black, backgroundColor: Colors.white),
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add Image'),
-                        ),
-                      ],
                     ),
                   ],
                 ),
