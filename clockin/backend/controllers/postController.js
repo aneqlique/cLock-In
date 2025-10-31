@@ -8,7 +8,7 @@ const getPosts = async (req, res) => {
   try {
     const posts = await Post.find()
       .sort({ createdAt: -1 })
-      .populate('userId', 'username')
+      .populate('userId', 'username profilePicture')
       .lean();
     
     res.status(200).json(posts);
@@ -49,6 +49,7 @@ const createOrUpdatePost = async (req, res) => {
         post.timeRange = task.timeRange;
         post.description = task.description;
         post.images = task.images;
+        post.profilePicture = user.profilePicture || '';
         await post.save();
       } else {
         // Create new post
@@ -56,6 +57,7 @@ const createOrUpdatePost = async (req, res) => {
           userId,
           taskId,
           username: user.username,
+          profilePicture: user.profilePicture || '',
           taskTitle: task.taskTitle,
           category: task.category,
           timeRange: task.timeRange,
@@ -137,6 +139,7 @@ const addComment = async (req, res) => {
     post.comments.push({
       userId,
       username: user.username,
+      profilePicture: user.profilePicture || '',
       comment: comment.trim()
     });
 

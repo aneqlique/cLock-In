@@ -14,7 +14,6 @@ class _DiarytlScreenState extends State<DiarytlScreen> {
   bool _loading = true;
   String? _error;
   String _currentUserId = '';
-  String _profilePicture = '';
 
   @override
   void initState() {
@@ -32,7 +31,6 @@ class _DiarytlScreenState extends State<DiarytlScreen> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
       _currentUserId = prefs.getString('userId') ?? '';
-      _profilePicture = prefs.getString('profilePicture') ?? '';
       
       final posts = await ApiService.getPosts(token);
       setState(() {
@@ -139,6 +137,11 @@ class _DiarytlScreenState extends State<DiarytlScreen> {
                           final post = _posts[index];
                           final postId = (post['_id'] ?? '').toString();
                           final username = (post['username'] ?? 'User').toString();
+                          // Profile picture can be in post['profilePicture'] or post['userId']['profilePicture']
+                          String postProfilePicture = (post['profilePicture'] ?? '').toString();
+                          if (postProfilePicture.isEmpty && post['userId'] != null && post['userId'] is Map) {
+                            postProfilePicture = (post['userId']['profilePicture'] ?? '').toString();
+                          }
                           final title = (post['taskTitle'] ?? '').toString();
                           final category = (post['category'] ?? '').toString();
                           final timeRange = (post['timeRange'] ?? '').toString();
@@ -175,12 +178,10 @@ class _DiarytlScreenState extends State<DiarytlScreen> {
                                       CircleAvatar(
                                         backgroundColor: Colors.grey[300],
                                         radius: 20,
-                                        backgroundImage: _profilePicture.isNotEmpty && 
-                                                       post['userId']?.toString() == _currentUserId
-                                            ? NetworkImage(_profilePicture)
+                                        backgroundImage: postProfilePicture.isNotEmpty
+                                            ? NetworkImage(postProfilePicture)
                                             : null,
-                                        child: _profilePicture.isEmpty || 
-                                               post['userId']?.toString() != _currentUserId
+                                        child: postProfilePicture.isEmpty
                                             ? Text(
                                                 username[0].toUpperCase(),
                                                 style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
@@ -297,7 +298,7 @@ class _DiarytlScreenState extends State<DiarytlScreen> {
                                           children: [
                                             Icon(
                                               isLiked ? Icons.favorite : Icons.favorite_border,
-                                              color: isLiked ? Colors.red : Colors.black87,
+                                              color: Colors.black,
                                               size: 24,
                                             ),
                                             const SizedBox(width: 4),
@@ -478,6 +479,7 @@ class _CommentsModalState extends State<_CommentsModal> {
                         itemBuilder: (context, index) {
                           final comment = _comments[index];
                           final username = (comment['username'] ?? 'User').toString();
+                          final commentProfilePicture = (comment['profilePicture'] ?? '').toString();
                           final text = (comment['comment'] ?? '').toString();
                           
                           return Padding(
@@ -486,12 +488,17 @@ class _CommentsModalState extends State<_CommentsModal> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 CircleAvatar(
-                                  backgroundColor: Colors.black,
+                                  backgroundColor: Colors.grey[300],
                                   radius: 16,
-                                  child: Text(
-                                    username[0].toUpperCase(),
-                                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                                  ),
+                                  backgroundImage: commentProfilePicture.isNotEmpty
+                                      ? NetworkImage(commentProfilePicture)
+                                      : null,
+                                  child: commentProfilePicture.isEmpty
+                                      ? Text(
+                                          username[0].toUpperCase(),
+                                          style: const TextStyle(color: Colors.black, fontSize: 12, fontWeight: FontWeight.bold),
+                                        )
+                                      : null,
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(

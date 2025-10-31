@@ -240,22 +240,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const Positioned.fill(
                     child: Center(child: CircularProgressIndicator()),
                   ),
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: GestureDetector(
-                    onTap: _uploadingImage ? null : _pickAndUploadProfilePicture,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.black,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
+                if (_editing)
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: GestureDetector(
+                      onTap: _uploadingImage ? null : _pickAndUploadProfilePicture,
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
                       ),
-                      child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
                     ),
                   ),
-                ),
               ],
             ),
             const SizedBox(height: 16),

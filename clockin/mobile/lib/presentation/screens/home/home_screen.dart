@@ -201,7 +201,7 @@ class _HomeScreen extends State<HomeScreen> {
                     children: [
                       Row(
                         children: const [
-                          Icon(Icons.alarm, color: Colors.amber, size: 20),
+                          Icon(Icons.alarm, color: Colors.white, size: 20),
                           SizedBox(width: 8),
                           Text('Alarm', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                         ],
@@ -213,7 +213,7 @@ class _HomeScreen extends State<HomeScreen> {
                         onChanged: (value) {
                           setModalState(() => alarmEnabled = value);
                         },
-                        activeColor: Colors.amber,
+                        activeColor: Colors.white,
                         contentPadding: EdgeInsets.zero,
                       ),
                       if (alarmEnabled) ...[
@@ -476,22 +476,26 @@ class _HomeScreen extends State<HomeScreen> {
     final startCtrl = TextEditingController();
     final endCtrl = TextEditingController();
     String category = 'School';
+    bool alarmEnabled = false;
+    int alarmMinutes = 10;
     final res = await showModalBottomSheet<_Task>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.black,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('New Task', style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700, color: Colors.white)),
-                const SizedBox(height: 14),
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('New Task', style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700, color: Colors.white)),
+                    const SizedBox(height: 14),
                 TextField(
                   controller: titleCtrl,
                   style: const TextStyle(color: Colors.white),
@@ -575,19 +579,80 @@ class _HomeScreen extends State<HomeScreen> {
                 ]),
                 const SizedBox(height: 12),
                 TextField(
-                  controller: descCtrl,
-                  maxLines: 3,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText: 'Description',
-                    labelStyle: const TextStyle(color: Colors.white70),
-                    filled: true,
-                    fillColor: Colors.white10,
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white24)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white60)),
-                  ),
-                ),
-                const SizedBox(height: 16),
+                      controller: descCtrl,
+                      maxLines: 3,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Description',
+                        labelStyle: const TextStyle(color: Colors.white70),
+                        filled: true,
+                        fillColor: Colors.white10,
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white24)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white60)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Alarm settings
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.alarm, color: Colors.white70, size: 20),
+                              const SizedBox(width: 8),
+                              const Text('Set Alarm', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                              const Spacer(),
+                              Switch(
+                                value: alarmEnabled,
+                                onChanged: (value) {
+                                  setModalState(() {
+                                    alarmEnabled = value;
+                                  });
+                                },
+                                activeColor: Colors.white,
+                              ),
+                            ],
+                          ),
+                          if (alarmEnabled) ...[
+                            const SizedBox(height: 8),
+                            const Text('Remind me before:', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<int>(
+                              value: alarmMinutes,
+                              items: const [
+                                DropdownMenuItem(value: 5, child: Text('5 minutes before')),
+                                DropdownMenuItem(value: 10, child: Text('10 minutes before')),
+                                DropdownMenuItem(value: 15, child: Text('15 minutes before')),
+                                DropdownMenuItem(value: 30, child: Text('30 minutes before')),
+                                DropdownMenuItem(value: 60, child: Text('1 hour before')),
+                              ],
+                              onChanged: (value) {
+                                setModalState(() {
+                                  alarmMinutes = value ?? 10;
+                                });
+                              },
+                              dropdownColor: Colors.black,
+                              style: const TextStyle(color: Colors.white),
+                              decoration: InputDecoration(
+                                filled: true,
+                                fillColor: Colors.white10,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.white24)),
+                                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.white60)),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -660,15 +725,27 @@ class _HomeScreen extends State<HomeScreen> {
                         }
                         // All overlapping tasks are completed and hidden -> allow
                       }
-                      Navigator.pop(ctx, _Task(title: title, category: category, description: descCtrl.text.trim(), color: color, start: sdt, end: e, status: 'pending'));
+                      Navigator.pop(ctx, _Task(
+                        title: title, 
+                        category: category, 
+                        description: descCtrl.text.trim(), 
+                        color: color, 
+                        start: sdt, 
+                        end: e, 
+                        status: 'pending',
+                        alarmEnabled: alarmEnabled,
+                        alarmMinutes: alarmMinutes,
+                      ));
                     },
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(vertical: 14)),
                     child: const Text('Add Task'),
                   ),
                 ),
-              ],
-            ),
-          ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -684,8 +761,18 @@ class _HomeScreen extends State<HomeScreen> {
           'timeRange': '$startStr-$endStr',
           'description': res.description,
           'status': res.status,
+          'alarm': {
+            'enabled': res.alarmEnabled,
+            'minutesBefore': res.alarmMinutes,
+          },
         });
         final id = (created['_id'] ?? created['id'] ?? '').toString();
+        
+        // Schedule alarm if enabled
+        if (res.alarmEnabled && id.isNotEmpty) {
+          _scheduleTaskAlarm(id, res.title, res.end, res.alarmMinutes);
+        }
+        
         setState(() {
           _tasks.add(_Task(
             id: id.isEmpty ? null : id,
@@ -696,6 +783,8 @@ class _HomeScreen extends State<HomeScreen> {
             start: res.start,
             end: res.end,
             status: (created['status'] ?? res.status).toString(),
+            alarmEnabled: res.alarmEnabled,
+            alarmMinutes: res.alarmMinutes,
           ));
         });
       } catch (e) {
