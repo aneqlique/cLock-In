@@ -1,5 +1,7 @@
 # cLock-In
-![ClockIn Preview](https://github.com/aneqlique/cLock-In/blob/main/ClockIn.png) 
+<p align="center">
+  <img src="https://github.com/aneqlique/cLock-In/blob/main/ClockIn.png" alt="ClockIn Preview" width="700"/>
+</p>
 
 Inspired by Love Next Door’s “unemployed clock,” this app turns your daily routine or itineraries into an interactive visual schedule. Part clock, part agenda, part diary! Seamlessly track your work hours, manage daily tasks, and visualize productivity — all in one cross-platform app.
  
@@ -14,23 +16,23 @@ Inspired by Love Next Door’s “unemployed clock,” this app turns your daily
 
 ---
 
-## 🚀 Features
+##  Features
 
-✨ **Core Functionalities**
-- 🔐 **User Authentication** – Secure login & registration with JWT  
-- ⏱️ **Time Tracking** – Clock in/out with precise timestamps  
-- ✅ **Task Management** – Create, update, and organize daily tasks
-- 🖼️ **Post Timeline** – Users can create a timeline of posts with photos stored via Cloudinary  
-- 👤 **Profile Management** – Upload and manage profile pictures (Cloudinary)  
-- 📊 **Data Visualization** – Real-time charts and productivity insights  
-- 🔒 **Secure Storage** – Local data encryption using `flutter_secure_storage`  
+ **Core Functionalities**
+-  **User Authentication** – Secure login & registration with JWT  
+-  **Time Tracking** – Clock in/out with precise timestamps  
+-  **Task Management** – Create, update, and organize daily tasks
+-  **Post Timeline** – Users can create a timeline of posts with photos stored via Cloudinary  
+-  **Profile Management** – Upload and manage profile pictures (Cloudinary)  
+-  **Data Visualization** – Real-time charts and productivity insights  
+-  **Secure Storage** – Local data encryption using `flutter_secure_storage`  
 
 ---
 
-## 🛠 Tech Stack
+## Tech Stack
 
 <details>
-<summary><b>📱 Frontend (Flutter App)</b></summary>
+<summary><b> Frontend (Flutter App)</b></summary>
 
 - **Flutter** ^3.8.1 — Cross-platform UI framework  
 - **Dart** — Programming language  
@@ -43,7 +45,7 @@ Inspired by Love Next Door’s “unemployed clock,” this app turns your daily
 </details>
 
 <details>
-<summary><b>🧩 Backend (API Server)</b></summary>
+<summary><b> Backend (API Server)</b></summary>
 
 - **Node.js** — JavaScript runtime  
 - **Express.js** ^5.1.0 — Web framework  
