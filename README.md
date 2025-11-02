@@ -1,6 +1,6 @@
 # cLock-In
 <p align="center">
-  <img src="https://github.com/aneqlique/cLock-In/blob/main/ClockIn.png" alt="ClockIn Preview" width="700"/>
+  <img src="https://github.com/aneqlique/cLock-In/blob/main/ClockIn.png" alt="ClockIn Preview" width="400"/>
 </p>
 
 Inspired by Love Next Door’s “unemployed clock,” this app turns your daily routine or itineraries into an interactive visual schedule. Part clock, part agenda, part diary! Seamlessly track your work hours, manage daily tasks, and visualize productivity — all in one cross-platform app.
