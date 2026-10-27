@@ -19,25 +19,6 @@
 
 ---
 
-## Table of contents
-
-- [About](#about)
-- [Mission & vision](#mission--vision)
-- [Features](#features)
-- [How it works](#how-it-works)
-- [Tech stack](#tech-stack)
-- [Architecture](#architecture)
-- [Getting started](#getting-started)
-- [Configuration](#configuration)
-- [API reference](#api-reference)
-- [Project structure](#project-structure)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [License](#license)
-- [Acknowledgments](#acknowledgments)
-
----
-
 ## About
 
 **cLock-In** turns your daily routine into an interactive, visual schedule. Inspired by the "unemployed clock" from the K-drama *Love Next Door*, it places every task for the day on a single 24-hour dial, so you can see at a glance how your time is spent and what's happening right now.
@@ -78,38 +59,38 @@ A world where everyday routines feel **intentional and shareable**: where a stud
 - **Auto-reset at midnight.** Tasks belong to the day they were created and leave the clock automatically at midnight. Overnight tasks stay until they end.
 - **Overlap protection.** You can't double-book a time slot that already has an active task.
 
-### ✍️ Tasks
+###  Tasks
 - Title, category, start/end time (tap-to-pick time pickers), notes and an optional **reminder** (5, 10, 30 or 60 minutes before the task ends).
 - Changing the start time automatically shifts the end time to keep the task's duration.
 - Overnight tasks are supported ("ends tomorrow").
 
-### 🏷️ Custom categories
+###  Custom categories
 - Comes with **School, Work, Self and House**. You can add up to 12 categories of your own.
 - Pick from **8 muted color tints** and **16 icons**. Rename, recolor and reorder categories at any time.
 - Renaming or recoloring updates every task instantly, without editing the tasks.
 - Deleting a category asks where to move its tasks, so nothing is ever lost.
 
-### 📔 Journal
+###  Journal
 - Every completed task becomes a **journal entry**, grouped by the day you finished it.
 - **Swipeable week view** with dots on days that have entries, plus a calendar picker for any date.
 - **Search across all entries** by title, category, notes, time or date.
 - Add up to **10 photos per entry** (stored on Cloudinary), edit details, or delete.
 - **One-tap "Share to feed"** from any entry.
 
-### 💬 Feed
+###  Feed
 - A social timeline of everyone's shared journal entries.
 - Photo carousels with a full-screen, pinch-to-zoom viewer.
 - **Double-tap to like**, with an animated heart, and like counts.
 - **Comments**, shown in a threaded-style sheet.
 
-### 👤 Profile & settings
+###  Profile & settings
 - Profile photo, name, username and email, with quick stats (journal entries and posts shared).
 - **Light, Dark or System theme**, applied instantly and synced to your account.
 - **12-hour or 24-hour time**, applied everywhere: dial, cards, journal, feed and time pickers.
 - Notification preferences and ringtone.
 - Stays signed in between launches; your session is checked securely at startup.
 
-### 🎨 Design
+###  Design
 - A modern Material 3 interface built on a calm **cream / black / grey** palette with muted category tints.
 - Floating pill navigation, skeleton loading states and friendly empty states.
 - Uses the **Fustat** typeface throughout.
@@ -225,93 +206,6 @@ cd clockin/mobile
 cp .env.example .env      # set HOST (see Configuration)
 flutter pub get
 flutter run
-```
-
----
-
-## Configuration
-
-### Backend: `clockin/backend/.env`
-| Variable | Description | Example |
-|---|---|---|
-| `MONGO_URI` | MongoDB Atlas connection string | `mongodb+srv://user:pass@cluster.xxxx.mongodb.net/clockin` |
-| `JWT_SECRET` | Long random string used to sign tokens | output of `openssl rand -hex 64` |
-| `CLOUDINARY_CLOUD_NAME` | Cloudinary cloud name | `my-cloud` |
-| `CLOUDINARY_API_KEY` | Cloudinary API key | `123456789012345` |
-| `CLOUDINARY_API_SECRET` | Cloudinary API secret | — |
-| `PORT` | Port for the API | `8000` |
-| `NODE_ENV` | Optional; `development` adds error details to upload errors | `development` |
-
-### Mobile: `clockin/mobile/.env`
-| Variable | Description |
-|---|---|
-| `HOST` | Address of the API server, **without** `/api` and with no trailing slash |
-
-Which `HOST` to use depends on where the app runs:
-
-| Running on | `HOST` |
-|---|---|
-| Android emulator | `http://10.0.2.2:8000` |
-| iOS simulator | `http://localhost:8000` |
-| Physical device (same Wi-Fi) | `http://<your-computer-LAN-IP>:8000` |
-
-> `.env` is bundled into the app, so **never put secrets in the mobile `.env`**. Both `.env` files are gitignored; only the `.env.example` templates are committed.
-
----
-
-## API reference
-
-All endpoints are prefixed with `/api`. 🔒 means the request needs an `Authorization: Bearer <token>` header.
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/users` | Register a new user |
-| `POST` | `/users/login` | Log in; returns a JWT |
-| `GET` | `/users` | List users |
-| `PUT` | `/users/:id` | Update profile, theme, time format, categories or notification settings |
-| `DELETE` | `/users/:id` | Delete a user |
-| `GET` | `/tasks` 🔒 | Get the current user's tasks |
-| `POST` | `/tasks` 🔒 | Create a task |
-| `PUT` | `/tasks/:id` 🔒 | Update a task; setting `setPublic` creates or removes its post |
-| `DELETE` | `/tasks/:id` 🔒 | Delete a task |
-| `POST` | `/upload` 🔒 | Upload up to 10 images (multipart field `images`); returns Cloudinary URLs |
-| `GET` | `/posts` 🔒 | Get all public posts (newest first) |
-| `POST` | `/posts` 🔒 | Create, update or remove a post for a task |
-| `POST` | `/posts/:postId/like` 🔒 | Like or unlike a post |
-| `POST` | `/posts/:postId/comment` 🔒 | Add a comment |
-| `GET` | `/posts/:postId/comments` 🔒 | Get a post's comments |
-
----
-
-## Project structure
-
-```
-cLock-In/
-├── ClockIn.png
-├── README.md
-└── clockin/
-    ├── backend/                  # Node.js / Express API
-    │   ├── config/               # MongoDB + Cloudinary setup
-    │   ├── controllers/          # users, tasks, posts, uploads
-    │   ├── middleware/           # JWT auth
-    │   ├── models/               # User, Task, Post (Mongoose)
-    │   ├── routes/
-    │   ├── utils/
-    │   ├── index.js
-    │   └── .env.example
-    └── mobile/                   # Flutter app
-        ├── lib/
-        │   ├── core/
-        │   │   ├── config/       # theme (light/dark tokens), routes
-        │   │   ├── models/       # ClockTask, TaskCategory
-        │   │   ├── services/     # API + user services
-        │   │   ├── state/        # theme, time format, categories, sync
-        │   │   └── utils/        # date/time formatting
-        │   └── presentation/
-        │       ├── screens/      # auth, home (clock + journal), diary (feed), settings
-        │       └── widgets/      # clock dial, cards, sheets, nav bar, pickers…
-        ├── assets/
-        └── .env.example
 ```
 
 ---
