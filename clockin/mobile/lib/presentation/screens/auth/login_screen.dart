@@ -1,6 +1,53 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/config/theme.dart';
 import '../../../core/services/user_service.dart';
+import '../../../core/state/app_settings.dart';
+import '../../../core/state/category_controller.dart';
+import '../../../core/state/theme_controller.dart';
+import '../../widgets/avatar.dart';
+import '../../widgets/custom_button.dart';
+import '../../widgets/custom_input_field.dart';
+import '../../widgets/dialogs.dart';
+
+/// Applies the preferences stored on the user's account (theme, time format,
+/// categories). Called after login and when the app shell refreshes the user.
+Future<void> applyAccountSettings(
+  Map<String, dynamic>? me, {
+  required ThemeController theme,
+  required AppSettings settings,
+  required CategoryController categories,
+  bool includeTheme = true,
+}) async {
+  if (me == null) return;
+  if (includeTheme) await theme.applyRemote(me['theme']);
+  await settings.applyRemote(me['timeFormat']);
+  await categories.applyRemote(me['categories']);
+}
+
+/// Logs in and caches the user, then applies their saved preferences.
+/// Shared by the login and register screens.
+Future<void> signIn(BuildContext context, String username, String password) async {
+  final userService = UserService();
+  final themeController = context.read<ThemeController>();
+  final settings = context.read<AppSettings>();
+  final categories = context.read<CategoryController>();
+  final data = await userService.loginUser(username, password);
+  await userService.saveUserData(data);
+  // Ensure username is available in prefs even if backend didn't return it
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    if ((prefs.getString('username') ?? '').isEmpty) {
+      await prefs.setString('username', username);
+    }
+  } catch (_) {}
+  // Fetch full user details (name, photo, theme) for the rest of the app
+  try {
+    final me = await userService.fetchAndCacheCurrentUser();
+    await applyAccountSettings(me, theme: themeController, settings: settings, categories: categories);
+  } catch (_) {}
+}
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,7 +60,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  bool _obscure = true;
   bool _loading = false;
 
   @override
@@ -25,182 +71,84 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _onLogin() async {
     if (!_formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
     setState(() => _loading = true);
     try {
-      final userService = UserService();
-      final data = await userService.loginUser(_usernameCtrl.text, _passwordCtrl.text);
-      await userService.saveUserData(data);
-      // Ensure username is available in prefs even if backend didn't return it
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        if ((prefs.getString('username') ?? '').isEmpty) {
-          await prefs.setString('username', _usernameCtrl.text.trim());
-        }
-      } catch (_) {}
-      // Try to fetch full user details so Settings can show them
-      try {
-        await userService.fetchAndCacheCurrentUser();
-      } catch (_) {}
+      await signIn(context, _usernameCtrl.text.trim(), _passwordCtrl.text);
       if (!mounted) return;
-      setState(() => _loading = false);
-      Navigator.pushReplacementNamed(context, '/home');
+      Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      final msg = friendlyError(e);
+      showAppSnack(context, msg.contains('Login failed') ? 'Wrong username or password.' : msg);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final cs = context.cs;
     return Scaffold(
-      backgroundColor: Colors.white,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 16),
-                  // Logo top-left
-                  Image.asset(
-                    'assets/Logo.png',
-                    height: 40,
-                    errorBuilder: (c, e, s) => const SizedBox(height: 40),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Hi, Welcome back!',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: Colors.black87,
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: AutofillGroup(
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Align(alignment: Alignment.centerLeft, child: AppLogo(size: 44)),
+                      const SizedBox(height: 32),
+                      Text('Welcome back', style: context.tt.headlineMedium),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Log in to keep your day on the clock.',
+                        style: context.tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: 32),
+                      AppTextField(
+                        controller: _usernameCtrl,
+                        label: 'Username',
+                        prefixIcon: Icons.person_outline_rounded,
+                        textInputAction: TextInputAction.next,
+                        autofillHints: const [AutofillHints.username],
+                        validator: (v) => (v == null || v.trim().isEmpty) ? 'Username is required' : null,
+                      ),
+                      const SizedBox(height: 14),
+                      PasswordField(
+                        controller: _passwordCtrl,
+                        textInputAction: TextInputAction.done,
+                        autofillHints: const [AutofillHints.password],
+                        onSubmitted: (_) => _onLogin(),
+                        validator: (v) => (v == null || v.length < 6) ? 'Min 6 characters' : null,
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => showAppSnack(context, 'Password reset isn\'t available yet.'),
+                          child: Text('Forgot password?', style: TextStyle(color: cs.onSurfaceVariant)),
                         ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Card container
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1C1C1C),
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                      ),
+                      const SizedBox(height: 8),
+                      AppButton(label: 'Log in', loading: _loading, onPressed: _onLogin),
+                      const SizedBox(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          TextFormField(
-                            // controller: _emailCtrl,
-                            // keyboardType: TextInputType.emailAddress,
-                            controller: _usernameCtrl, 
-                            decoration: InputDecoration(
-                              hintText: 'username',
-                              prefixIcon: const Icon(Icons.person_outline_rounded),
-                              filled: true,
-                              fillColor: Colors.white,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: BorderSide(color: Colors.black.withOpacity(.05)),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: BorderSide(color: Colors.black.withOpacity(.05)),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: const BorderSide(color: Colors.white70, width: 1.2),
-                              ),
-                              hintStyle: const TextStyle(color: Colors.black54),
-                            ),
-                            validator: (v) {
-                              if (v == null || v.trim().isEmpty) return 'Username is required';
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 14),
-                          TextFormField(
-                            controller: _passwordCtrl,
-                            obscureText: _obscure,
-                            decoration: InputDecoration(
-                              hintText: 'password',
-                              prefixIcon: const Icon(Icons.lock_outline_rounded),
-                              suffixIcon: IconButton(
-                                onPressed: () => setState(() => _obscure = !_obscure),
-                                icon: Icon(_obscure ? Icons.visibility_rounded : Icons.visibility_off_rounded, color: Colors.white70),
-                              ),
-                              filled: true,
-                              fillColor: Colors.white,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: BorderSide(color: Colors.black.withOpacity(.05)),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: BorderSide(color: Colors.black.withOpacity(.05)),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: const BorderSide(color: Colors.white70, width: 1.2),
-                              ),
-                              hintStyle: const TextStyle(color: Colors.black54),
-                            ),
-                            validator: (v) => (v == null || v.length < 6) ? 'Min 6 characters' : null,
-                          ),
-                          const SizedBox(height: 8),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: () {},
-                              child: const Text(
-                                'Forgot Password?',
-                                style: TextStyle(color: Colors.white70),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF6B6B6B),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-                              ),
-                              onPressed: _loading ? null : _onLogin,
-                              child: _loading
-                                  ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                  : const Text('Log In'),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Text(
-                                "Don't have an account? ",
-                                style: TextStyle(color: Colors.white70),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pushNamed(context, '/register'),
-                                child: Text(
-                                  'Sign Up here',
-                                  style: TextStyle(color: cs.tertiary),
-                                ),
-                              ),
-                            ],
+                          Text("Don't have an account?", style: TextStyle(color: cs.onSurfaceVariant)),
+                          TextButton(
+                            onPressed: () => Navigator.pushNamed(context, '/register'),
+                            child: const Text('Sign up'),
                           ),
                         ],
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),

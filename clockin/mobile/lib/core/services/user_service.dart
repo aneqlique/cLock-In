@@ -61,7 +61,7 @@ class UserService {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       return data;
     } else {
-      throw Exception('Registration failed: ${response.statusCode}');
+      throw Exception('Registration failed: ${response.statusCode} ${response.body}');
     }
   }
 
@@ -100,6 +100,17 @@ class UserService {
     // await prefs.setString('address', (user['address'] ?? '').toString());
     // await prefs.setString('type', (user['type'] ?? '').toString());
     // await prefs.setBool('isActive', (user['isActive'] ?? true) == true);
+    // Profile picture, theme and notification settings come back from the
+    // backend on /users and PUT /users/:id; cache them so they survive restarts.
+    if ((user['profilePicture'] ?? '').toString().isNotEmpty) {
+      await prefs.setString('profilePicture', user['profilePicture'].toString());
+    }
+    if ((user['theme'] ?? '').toString().isNotEmpty) {
+      await prefs.setString('theme', user['theme'].toString());
+    }
+    if (user['notificationSettings'] is Map) {
+      await prefs.setString('notificationSettings', jsonEncode(user['notificationSettings']));
+    }
     // Optional: profile picture fields if backend provides
     if (user.containsKey('profilePictureUrl')) {
       await prefs.setString('profilePictureUrl', (user['profilePictureUrl'] ?? '').toString());
@@ -112,7 +123,17 @@ class UserService {
   // Retrieve User Data from SharedPreferences
   Future<Map<String, dynamic>> getUserData() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
+    Map<String, dynamic>? notificationSettings;
+    try {
+      final raw = prefs.getString('notificationSettings');
+      if (raw != null && raw.isNotEmpty) {
+        notificationSettings = (jsonDecode(raw) as Map).cast<String, dynamic>();
+      }
+    } catch (_) {}
     return {
+      'profilePicture': prefs.getString('profilePicture') ?? '',
+      'theme': prefs.getString('theme') ?? 'system',
+      'notificationSettings': notificationSettings,
       'token': prefs.getString('token') ?? '',
       'id': prefs.getString('id') ?? '',
       'firstName': prefs.getString('firstName') ?? '',
@@ -136,21 +157,42 @@ class UserService {
     return prefs.getString('token') != null;
   }
 
+  // True when a saved token exists and its JWT `exp` claim is still in the future.
+  Future<bool> hasValidSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token') ?? '';
+      final parts = token.split('.');
+      if (parts.length != 3) return false;
+      final payload = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
+      final exp = (payload is Map) ? payload['exp'] : null;
+      if (exp is! num) return false;
+      final expiry = DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000);
+      return expiry.isAfter(DateTime.now().add(const Duration(minutes: 1)));
+    } catch (_) {
+      return false;
+    }
+  }
+
   // Logout and Clear User Data
   Future<void> logout() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    // Preserve hidden task keys across logout
+    // Preserve hidden task keys and the device theme choice across logout
     final hiddenSnapshots = <String, List<String>>{};
     for (final k in prefs.getKeys()) {
       if (k.startsWith('hidden_')) {
         hiddenSnapshots[k] = prefs.getStringList(k) ?? const <String>[];
       }
     }
+    final themeMode = prefs.getString('theme_mode');
+    final timeFormat = prefs.getString('time_format');
     await prefs.clear();
     // Restore preserved hidden_* keys
     for (final entry in hiddenSnapshots.entries) {
       await prefs.setStringList(entry.key, entry.value);
     }
+    if (themeMode != null) await prefs.setString('theme_mode', themeMode);
+    if (timeFormat != null) await prefs.setString('time_format', timeFormat);
   }
 
   Future<Map<String, dynamic>> updateUser({
