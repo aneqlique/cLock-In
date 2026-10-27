@@ -2,6 +2,7 @@ const Post = require('../models/Post');
 const Task = require('../models/Task');
 const User = require('../models/User');
 const mongoose = require('mongoose');
+const { categorySnapshot } = require('../utils/categories');
 
 // Get all public posts
 const getPosts = async (req, res) => {
@@ -46,6 +47,7 @@ const createOrUpdatePost = async (req, res) => {
         // Update existing post
         post.taskTitle = task.taskTitle;
         post.category = task.category;
+        Object.assign(post, categorySnapshot(user, task.category));
         post.timeRange = task.timeRange;
         post.description = task.description;
         post.images = task.images;
@@ -60,6 +62,7 @@ const createOrUpdatePost = async (req, res) => {
           profilePicture: user.profilePicture || '',
           taskTitle: task.taskTitle,
           category: task.category,
+          ...categorySnapshot(user, task.category),
           timeRange: task.timeRange,
           description: task.description,
           images: task.images

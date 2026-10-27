@@ -15,6 +15,10 @@ const postSchema = new mongoose.Schema({
   profilePicture: { type: String, default: '' },
   taskTitle: { type: String, required: true },
   category: { type: String, required: true },
+  // Snapshot of the author's category name/tint so other users can display it
+  categoryLabel: { type: String, default: '' },
+  categoryColor: { type: Number },
+  categoryIcon: { type: String, default: '' },
   timeRange: { type: String, required: true },
   description: { type: String },
   images: [String],

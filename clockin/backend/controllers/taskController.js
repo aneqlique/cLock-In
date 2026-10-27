@@ -1,6 +1,7 @@
 const Task = require('../models/Task');
 const Post = require('../models/Post');
 const User = require('../models/User');
+const { categorySnapshot } = require('../utils/categories');
 
 const getTask = async (req, res) => {
   try {
@@ -15,16 +16,17 @@ const getTask = async (req, res) => {
 const createTask = async (req, res) => {
   try {
     // const userId = req.user.id;
-    const{taskTitle, category, timeRange, description, status, images, setPublic} = req.body;
+    const{taskTitle, category, timeRange, description, status, images, setPublic, alarm} = req.body;
     const newtask = await new Task({
         user: req.user.id,
-        taskTitle, 
-        category, 
-        timeRange, 
-        description, 
+        taskTitle,
+        category,
+        timeRange,
+        description,
         status: status || 'pending',
         images: images || [],
-        setPublic: setPublic || false });
+        setPublic: setPublic || false,
+        alarm });
 
     const savedTask = await newtask.save();
     res.status(201).json(savedTask);
@@ -59,6 +61,7 @@ const updateTask = async (req, res) => {
             // Update existing post
             post.taskTitle = updated.taskTitle;
             post.category = updated.category;
+            Object.assign(post, categorySnapshot(user, updated.category));
             post.timeRange = updated.timeRange;
             post.description = updated.description;
             post.images = updated.images;
@@ -71,6 +74,7 @@ const updateTask = async (req, res) => {
               username: user.username,
               taskTitle: updated.taskTitle,
               category: updated.category,
+              ...categorySnapshot(user, updated.category),
               timeRange: updated.timeRange,
               description: updated.description,
               images: updated.images || []

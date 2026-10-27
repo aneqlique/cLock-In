@@ -1,12 +1,19 @@
-import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/painting.dart';
-import 'package:image_picker/image_picker.dart' show XFile, ImagePicker;
-import 'package:clockin/core/services/api_service.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
- 
+import 'package:clockin/core/config/theme.dart';
+import 'package:clockin/core/services/api_service.dart';
+import 'package:clockin/core/state/data_sync.dart';
+import 'package:clockin/core/utils/date_utils.dart';
+import 'package:clockin/presentation/screens/diary/diary_post_modal.dart';
+import 'package:clockin/presentation/widgets/dialogs.dart';
+import 'package:clockin/presentation/widgets/empty_state.dart';
+import 'package:clockin/presentation/widgets/photo_carousel.dart';
+import 'package:clockin/presentation/widgets/skeleton.dart';
+import 'package:clockin/presentation/widgets/task_card.dart';
+import 'package:clockin/presentation/widgets/week_strip.dart';
 
+/// The Journal tab: completed tasks by day, with search across every day.
 class TaskListView extends StatefulWidget {
   const TaskListView({super.key});
 
@@ -21,100 +28,95 @@ class _TaskListViewState extends State<TaskListView> {
   String? _error;
   String _query = '';
   DateTime? _selectedDate;
-  final FocusNode _searchFocus = FocusNode();
   final TextEditingController _searchCtrl = TextEditingController();
+  DataSync? _sync;
 
   @override
   void initState() {
     super.initState();
     _fetch();
   }
-  
-  // Add this method to allow refresh from home screen
-  void refreshTasks() {
-    _fetch();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_sync == null) {
+      _sync = context.read<DataSync>();
+      _sync!.addListener(_onSync);
+    }
   }
 
   @override
   void dispose() {
-    _searchFocus.dispose();
+    _sync?.removeListener(_onSync);
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _fetch() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  void _onSync() {
+    if (_sync?.source != this) _fetch(silent: true);
+  }
+
+  Future<void> _fetch({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
       final list = await ApiService.getTasks(token);
       final items = list.map<Map<String, dynamic>>((e) => (e as Map).cast<String, dynamic>()).toList();
       final completed = items.where((m) => (m['status'] ?? 'pending') == 'completed').toList();
-      
+      if (!mounted) return;
       setState(() {
+        _error = null;
         _allCompleted = completed;
-        // Filter to show only today's tasks by default
         _completed = _filterByDate(completed, _selectedDate);
       });
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-      });
+      if (mounted && !silent) setState(() => _error = friendlyError(e));
     } finally {
-      setState(() {
-        _loading = false;
-      });
+      if (mounted) setState(() => _loading = false);
     }
   }
 
+  DateTime? _entryDate(Map<String, dynamic> task) {
+    for (final key in ['completedAt', 'updatedAt']) {
+      final v = task[key];
+      if (v == null) continue;
+      try {
+        return DateTime.parse(v.toString()).toLocal();
+      } catch (_) {}
+    }
+    return null;
+  }
+
   List<Map<String, dynamic>> _filterByDate(List<Map<String, dynamic>> tasks, DateTime? date) {
-    // Use local time to ensure we're comparing in the correct timezone
     final now = DateTime.now();
     final targetDate = date ?? now;
-    
     return tasks.where((task) {
-      // Check if task was completed on target date
-      final completedAt = task['completedAt'];
-      if (completedAt != null) {
-        try {
-          final taskDate = DateTime.parse(completedAt.toString()).toLocal();
-          if (_isSameDay(taskDate, targetDate)) return true;
-        } catch (e) {
-          // If parsing fails, continue to fallback
-        }
-      }
-      
-      // Fallback to updatedAt if completedAt doesn't exist or parsing failed
-      final updatedAt = task['updatedAt'];
-      if (updatedAt != null) {
-        try {
-          final taskDate = DateTime.parse(updatedAt.toString()).toLocal();
-          if (_isSameDay(taskDate, targetDate)) return true;
-        } catch (e) {
-          // If parsing fails, continue
-        }
-      }
-      
+      // Completed on the target date (completedAt, falling back to updatedAt)
+      final d = _entryDate(task);
+      if (d != null && isSameDay(d, targetDate)) return true;
       // Special handling for tasks that span today to tomorrow
-      final timeRange = task['timeRange']?.toString() ?? '';
-      if (timeRange.toLowerCase().contains('today') && timeRange.toLowerCase().contains('tomorrow')) {
-        // If task spans today-tomorrow and target date is today or tomorrow, include it
-        if (_isSameDay(targetDate, now) || _isSameDay(targetDate, now.add(const Duration(days: 1)))) {
+      final timeRange = task['timeRange']?.toString().toLowerCase() ?? '';
+      if (timeRange.contains('today') && timeRange.contains('tomorrow')) {
+        if (isSameDay(targetDate, now) || isSameDay(targetDate, now.add(const Duration(days: 1)))) {
           return true;
         }
       }
-      
       return false;
     }).toList();
   }
 
-  bool _isSameDay(DateTime date1, DateTime date2) {
-    return date1.year == date2.year &&
-           date1.month == date2.month &&
-           date1.day == date2.day;
+  void _selectDate(DateTime? d) {
+    setState(() {
+      _selectedDate = (d == null || isSameDay(d, DateTime.now())) ? null : d;
+      _completed = _filterByDate(_allCompleted, _selectedDate);
+    });
   }
 
   Future<void> _pickDate() async {
@@ -124,295 +126,50 @@ class _TaskListViewState extends State<TaskListView> {
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
     );
-    
-    if (picked != null) {
-      setState(() {
-        _selectedDate = picked;
-        _completed = _filterByDate(_allCompleted, _selectedDate);
-      });
-    }
-  }
-
-  void _resetToToday() {
-    setState(() {
-      _selectedDate = null;
-      _completed = _filterByDate(_allCompleted, null);
-    });
+    if (picked != null) _selectDate(picked);
   }
 
   Future<void> _delete(String id) async {
+    final prevAll = List<Map<String, dynamic>>.from(_allCompleted);
     final prev = List<Map<String, dynamic>>.from(_completed);
+    bool matches(Map m) => (m['_id'] ?? m['id'] ?? '').toString() == id;
     setState(() {
-      _completed.removeWhere((m) => (m['_id'] ?? m['id'] ?? '').toString() == id);
+      _completed.removeWhere(matches);
+      _allCompleted.removeWhere(matches);
     });
     try {
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token') ?? '';
-      await ApiService.deleteTask(token, id);
+      await ApiService.deleteTask(prefs.getString('token') ?? '', id);
+      _sync?.bump(this);
     } catch (e) {
+      if (!mounted) return;
       setState(() {
+        _allCompleted = prevAll;
         _completed = prev;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete: ${e.toString()}')),
-        );
-      }
+      showAppSnack(context, 'Failed to delete: ${friendlyError(e)}');
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-    backgroundColor: const Color(0xFFEAE6E0),
-    appBar: AppBar(
-    automaticallyImplyLeading: false, // 🔥 removes the default back arrow
-    backgroundColor: const Color(0xFFEAE6E0),
-    elevation: 0,
-    titleSpacing: 0,
-    title: Row(
-        children: [
-        const SizedBox(width: 15),
-        GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Image.asset(
-            'assets/Logo.png',
-            width: 30,
-            height: 30,
-            fit: BoxFit.contain,
-            ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-            child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            height: 40,
-            decoration: BoxDecoration(
-                // color: _searchFocus.hasFocus ? Color(0xFFEAE6E0) : const Color(0xFFF2F2F2), 
-                color: Color(0xFFF6F6F6),// 👌 flat transparent background
-                borderRadius: BorderRadius.circular(20),
-                // border: _searchFocus.hasFocus
-                //     ? Border.all(color: Colors.black.withOpacity(0.15)) // subtle border on focus
-                //     : null,
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            alignment: Alignment.centerLeft,
-            child: Row(
-                children: [
-                const Icon(Icons.search, color: Colors.black87, size: 22),
-                const SizedBox(width: 6),
-                Expanded(
-                    child: TextField(
-                    focusNode: _searchFocus,
-                    controller: _searchCtrl,
-                    onChanged: (v) => setState(() => _query = v.trim()),
-                    onSubmitted: (_) => _searchFocus.unfocus(),
-                    decoration: const InputDecoration(
-                        fillColor: Color(0xFFF6F6F6),
-                        hintText: 'Search',
-                        hintStyle: TextStyle(color: Colors.black45),
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                    ),
-                    cursorColor: Colors.black87,
-                    style: const TextStyle(color: Colors.black87),
-                    ),
-                ),
-                if (_query.isNotEmpty)
-                    InkWell(
-                    onTap: () => setState(() {
-                        _query = '';
-                        _searchCtrl.clear();
-                    }),
-                    child: const Icon(Icons.close, color: Colors.black54, size: 20),
-                    ),
-                ],
-            ),
-            ),
-        ),
-        const SizedBox(width: 12),
-        ],
-    ),
-    actions: [
-        IconButton(
-          icon: const Icon(Icons.calendar_month_rounded, color: Colors.black),
-          onPressed: _pickDate,
-          tooltip: 'Select Date',
-        ),
-    ],
-    ),  
-
-      body: RefreshIndicator(
-        onRefresh: _fetch,
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-                ? ListView(children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Text(_error!, style: const TextStyle(color: Colors.redAccent)),
-                    )
-                  ])
-                : CustomScrollView(
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: Column(
-                          children: [
-                            const Divider(height: 1, color: Color(0xFFE5E5E5)),
-                            const SizedBox(height: 10),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  _selectedDate == null
-                                      ? "Today's Completed Tasks!"
-                                      : "${_selectedDate!.month}/${_selectedDate!.day}/${_selectedDate!.year} Tasks",
-                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-                                ),
-                                if (_selectedDate != null) ...[
-                                  const SizedBox(width: 8),
-                                  IconButton(
-                                    icon: const Icon(Icons.refresh, size: 20),
-                                    onPressed: _resetToToday,
-                                    tooltip: 'Reset to Today',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                                ],
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                          ],
-                        ),
-                      ),
-                      SliverPadding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        sliver: SliverGrid(
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                            childAspectRatio: 0.75,
-                          ),
-                          delegate: SliverChildBuilderDelegate(
-                            (ctx, i) {
-                              final data = _filtered();
-                              final m = data[i];
-                              final id = (m['_id'] ?? m['id'] ?? '').toString();
-                              final title = (m['taskTitle'] ?? '').toString();
-                              final category = (m['category'] ?? '').toString();
-                              final timeRange = (m['timeRange'] ?? '').toString();
-                              final description = (m['description'] ?? '').toString();
-                              final images = m['images'] != null && m['images'] is List 
-                                  ? (m['images'] as List).map((e) => e.toString()).toList() 
-                                  : <String>[];
-                              final hasImage = images.isNotEmpty;
-                              
-                              return InkWell(
-                                onTap: () {
-                                  _openTaskModal(m);
-                                },
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF1E1E1E),
-                                    borderRadius: BorderRadius.circular(18),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      if (hasImage)
-                                        ClipRRect(
-                                          borderRadius: const BorderRadius.only(
-                                            topLeft: Radius.circular(18),
-                                            topRight: Radius.circular(18),
-                                          ),
-                                          child: Image.network(
-                                            images.first,
-                                            height: 120,
-                                            width: double.infinity,
-                                            fit: BoxFit.cover,
-                                            loadingBuilder: (context, child, loadingProgress) {
-                                              if (loadingProgress == null) return child;
-                                              return Container(
-                                                height: 120,
-                                                color: Colors.grey[800],
-                                                child: const Center(
-                                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                                ),
-                                              );
-                                            },
-                                            errorBuilder: (context, error, stackTrace) {
-                                              return Container(
-                                                height: 120,
-                                                color: Colors.grey[800],
-                                                child: const Center(
-                                                  child: Icon(Icons.image_not_supported, color: Colors.white54),
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        ),
-                                      Expanded(
-                                        child: Padding(
-                                          padding: const EdgeInsets.fromLTRB(15.0, 15.0, 15.0, 19.0),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(title,
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontWeight: FontWeight.w800,
-                                                      fontSize: 16)),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                _toTitleCase(category),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(color: Colors.white70, fontStyle: FontStyle.italic),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(timeRange,
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w600)),
-                                              const SizedBox(height: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  description,
-                                                  maxLines: hasImage ? 2 : 4,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: const TextStyle(color: Colors.white70, fontSize: 13),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                            childCount: _filtered().length,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-      ),
+  void _openEntry(Map<String, dynamic> m) {
+    showJournalEntrySheet(
+      context,
+      data: m,
+      onUpdated: (updated) {
+        setState(() {
+          final id = (updated['_id'] ?? updated['id'] ?? '').toString();
+          final i = _allCompleted.indexWhere((x) => (x['_id'] ?? x['id']).toString() == id);
+          if (i >= 0) _allCompleted[i] = updated;
+          _completed = _filterByDate(_allCompleted, _selectedDate);
+        });
+        _sync?.bump(this);
+      },
+      onDelete: _delete,
     );
   }
 
-  String _toTitleCase(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
-
   List<Map<String, dynamic>> _filtered() {
     if (_query.isEmpty) return _completed;
-    
     // When searching, search across ALL completed tasks (all dates)
     final q = _query.toLowerCase();
     return _allCompleted.where((m) {
@@ -420,541 +177,298 @@ class _TaskListViewState extends State<TaskListView> {
       final c = (m['category'] ?? '').toString().toLowerCase();
       final d = (m['description'] ?? '').toString().toLowerCase();
       final tr = (m['timeRange'] ?? '').toString().toLowerCase();
-      
-      // Also search by date
-      final completedAt = m['completedAt'] ?? m['updatedAt'];
-      String dateStr = '';
-      if (completedAt != null) {
-        try {
-          final date = DateTime.parse(completedAt.toString());
-          dateStr = '${date.month}/${date.day}/${date.year}'.toLowerCase();
-        } catch (e) {
-          // ignore
-        }
-      }
-      
+      final date = _entryDate(m);
+      final dateStr = date == null ? '' : '${date.month}/${date.day}/${date.year}';
       return t.contains(q) || c.contains(q) || d.contains(q) || tr.contains(q) || dateStr.contains(q);
     }).toList();
   }
 
-  Future<void> _openTaskModal(Map<String, dynamic> m) async {
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _TaskModalSheet(
-        data: m,
-        onUpdated: (updated) {
-          setState(() {
-            final id = (updated['_id'] ?? updated['id'] ?? '').toString();
-            final idx = _completed.indexWhere((x) => (x['_id'] ?? x['id']).toString() == id);
-            if (idx >= 0) _completed[idx] = updated.cast<String, dynamic>();
-          });
-        },
-        onDelete: (id) async {
-          await _delete(id);
-        },
-      ),
-    );
-  }
-
-  InputDecoration _dec(String label) => InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(color: Colors.white70),
-        filled: true,
-        fillColor: const Color(0xFF2B2B2B),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Colors.white24),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Colors.white60),
-        ),
-      );
-}
-
-class _TaskModalSheet extends StatefulWidget {
-  final Map<String, dynamic> data;
-  final void Function(Map<String, dynamic> updated) onUpdated;
-  final Future<void> Function(String id) onDelete;
-  const _TaskModalSheet({required this.data, required this.onUpdated, required this.onDelete});
-  @override
-  State<_TaskModalSheet> createState() => _TaskModalSheetState();
-}
-
-class _TaskModalSheetState extends State<_TaskModalSheet> {
-  late bool editable;
-  late String id;
-  late String cat;
-  late TextEditingController titleCtrl;
-  late TextEditingController descCtrl;
-  late TextEditingController startCtrl;
-  late TextEditingController endCtrl;
-  late bool setPublic;
-  final ImagePicker _picker = ImagePicker();
-  List<File> _selectedImages = [];
-  List<String> _existingImageUrls = [];
-
-  @override
-  void initState() {
-    super.initState();
-    editable = false;
-    id = (widget.data['_id'] ?? widget.data['id'] ?? '').toString();
-    final title = (widget.data['taskTitle'] ?? '').toString();
-    final description = (widget.data['description'] ?? '').toString();
-    final timeRange = (widget.data['timeRange'] ?? '').toString();
-    cat = (widget.data['category'] ?? 'self').toString();
-    setPublic = (widget.data['setPublic'] ?? false) as bool;
-    final parts = timeRange.split('-');
-    titleCtrl = TextEditingController(text: title);
-    descCtrl = TextEditingController(text: description);
-    startCtrl = TextEditingController(text: parts.isNotEmpty ? parts[0].trim() : '');
-    endCtrl = TextEditingController(text: parts.length > 1 ? parts[1].trim() : '');
-    
-    // Load existing images
-    if (widget.data['images'] != null && widget.data['images'] is List) {
-      _existingImageUrls = (widget.data['images'] as List).map((e) => e.toString()).toList();
-    }
-  }
-
-  Future<void> _pickImages() async {
-    try {
-      final totalImages = _existingImageUrls.length + _selectedImages.length;
-      if (totalImages >= 10) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Cannot upload more than 10 images per task')),
-          );
-        }
-        return;
-      }
-
-      final List<XFile>? pickedFiles = await _picker.pickMultiImage();
-      if (pickedFiles != null && pickedFiles.isNotEmpty) {
-        final availableSlots = 10 - totalImages;
-        final filesToAdd = pickedFiles.take(availableSlots).toList();
-        
-        if (pickedFiles.length > availableSlots) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Only added $availableSlots images. Maximum is 10 per task.')),
-            );
-          }
-        }
-        
-        setState(() {
-          _selectedImages.addAll(filesToAdd.map((file) => File(file.path)).toList());
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to pick images: ${e.toString()}')),
-        );
-      }
-    }
-  }
-
-  void _removeImage(int index) {
-    setState(() {
-      _selectedImages.removeAt(index);
-    });
-  }
-
-  void _removeExistingImage(int index) {
-    setState(() {
-      _existingImageUrls.removeAt(index);
-    });
-  }
-
-  Future<ImageInfo> _loadImage(ImageProvider imageProvider) {
-    final completer = Completer<ImageInfo>();
-    final stream = imageProvider.resolve(const ImageConfiguration());
-    final listener = ImageStreamListener((info, _) {
-      if (!completer.isCompleted) {
-        completer.complete(info);
-      }
-    });
-    stream.addListener(listener);
-    completer.future.then((_) {
-      stream.removeListener(listener);
-    });
-    return completer.future;
-  }
-
-  @override
-  void dispose() {
-    titleCtrl.dispose();
-    descCtrl.dispose();
-    startCtrl.dispose();
-    endCtrl.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-    return SafeArea(
-      child: AnimatedPadding(
-        duration: const Duration(milliseconds: 120),
-        padding: EdgeInsets.only(
-          top: 68,
-          bottom: media.viewInsets.bottom,
-        ),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: media.size.width * 0.94,
-              maxHeight: media.size.height * 0.85,
-            ),
-            child: Material(
-              color: const Color(0xFF1E1E1E),
-              borderRadius: BorderRadius.circular(24),
-              clipBehavior: Clip.antiAlias,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back, color: Colors.white70),
-                          onPressed: () => Navigator.pop(context),
-                          tooltip: 'Back',
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          icon: Icon(editable ? Icons.check : Icons.edit, color: Colors.white70),
-                          onPressed: () async {
-                            if (!editable) {
-                              setState(() => editable = true);
-                              return;
-                            }
-                            try {
-                              final prefs = await SharedPreferences.getInstance();
-                              final token = prefs.getString('token') ?? '';
-                              
-                              // Upload new images if any
-                              List<String> uploadedUrls = [];
-                              if (_selectedImages.isNotEmpty) {
-                                uploadedUrls = await ApiService.uploadImages(token, _selectedImages);
-                              }
-                              
-                              // Combine existing and new image URLs
-                              final allImages = [..._existingImageUrls, ...uploadedUrls];
-                              
-                              final updates = {
-                                'taskTitle': titleCtrl.text.trim(),
-                                'category': cat,
-                                'timeRange': '${startCtrl.text.trim()}-${endCtrl.text.trim()}',
-                                'description': descCtrl.text.trim(),
-                                'images': allImages,
-                                'setPublic': setPublic,
-                              };
-                              final updated = await ApiService.updateTask(token, id, updates);
-                              widget.onUpdated(updated.cast<String, dynamic>());
-                              if (mounted) {
-                                setState(() {
-                                  editable = false;
-                                  _selectedImages.clear();
-                                  _existingImageUrls = allImages;
-                                });
-                              }
-                            } catch (e) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Update failed: ${e.toString()}')));
-                              }
-                            }
-                          },
-                          tooltip: editable ? 'Save' : 'Edit',
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.white70),
-                          onPressed: () async {
-                            final confirm = await showDialog<bool>(
-                              context: context,
-                              builder: (dctx) => Theme(
-                                data: Theme.of(dctx).copyWith(
-                                  colorScheme: const ColorScheme.dark(
-                                    primary: Colors.white,
-                                    secondary: Colors.white,
-                                    surface: Color(0xFF1E1E1E),
-                                    onSurface: Colors.white,
-                                  ),
-                                ),
-                                child: AlertDialog(
-                                  backgroundColor: const Color(0xFF1E1E1E),
-                                  titleTextStyle: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
-                                  contentTextStyle: const TextStyle(color: Colors.white70),
-                                  title: const Text('Delete task?'),
-                                  content: const Text('This action cannot be undone.'),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(dctx, false),
-                                      style: TextButton.styleFrom(foregroundColor: Colors.white70),
-                                      child: const Text('Cancel'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(dctx, true),
-                                      style: TextButton.styleFrom(foregroundColor: Colors.white),
-                                      child: const Text('Delete'),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                            if (confirm == true) {
-                              await widget.onDelete(id);
-                              if (mounted) Navigator.pop(context);
-                            }
-                          },
-                          tooltip: 'Delete',
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    editable
-                        ? TextField(
-                            controller: titleCtrl,
-                            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
-                            decoration: _dec('Title'),
-                          )
-                        : Text(titleCtrl.text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 20)),
-                    const SizedBox(height: 6),
-                    editable
-                        ? DropdownButtonFormField<String>(
-                            value: cat,
-                            items: const [
-                              DropdownMenuItem(value: 'school', child: Text('School')),
-                              DropdownMenuItem(value: 'work', child: Text('Work')),
-                              DropdownMenuItem(value: 'self', child: Text('Self')),
-                              DropdownMenuItem(value: 'house', child: Text('House')),
-                            ],
-                            onChanged: (v) => setState(() => cat = v ?? cat),
-                            dropdownColor: Colors.black,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: _dec('Category'),
-                          )
-                        : Text(_toTitleCase(cat), style: const TextStyle(color: Colors.white70, fontStyle: FontStyle.italic)),
-                    const SizedBox(height: 8),
-                    editable
-                        ? Row(
-                            children: [
-                              Expanded(child: TextField(controller: startCtrl, style: const TextStyle(color: Colors.white), decoration: _dec('Start (HH:mm)'))),
-                              const SizedBox(width: 12),
-                              Expanded(child: TextField(controller: endCtrl, style: const TextStyle(color: Colors.white), decoration: _dec('End (HH:mm)'))),
-                            ],
-                          )
-                        : Text('${startCtrl.text}-${endCtrl.text}', style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 10),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            editable
-                                ? Column(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                                    children: [
-                                      TextField(
-                                        controller: descCtrl,
-                                        maxLines: 6,
-                                        style: const TextStyle(color: Colors.white),
-                                        decoration: _dec('Description'),
-                                      ),
-                                      const SizedBox(height: 16),
-                                      Row(
-                                        children: [
-                                          Theme(
-                                            data: Theme.of(context).copyWith(
-                                              switchTheme: const SwitchThemeData(
-                                                thumbColor: MaterialStatePropertyAll(Colors.black),
-                                                trackColor: MaterialStatePropertyAll(Color(0xFFCCCCCC)),
-                                              ),
-                                            ),
-                                            child: Switch(
-                                              value: setPublic,
-                                              onChanged: (v) => setState(() => setPublic = v),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          const Text('Set as public', style: TextStyle(color: Colors.white)),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 16),
-                                      OutlinedButton.icon(
-                                        onPressed: _pickImages,
-                                        style: OutlinedButton.styleFrom(
-                                          foregroundColor: Colors.white,
-                                          backgroundColor: Color(0xFF555555),
-                                          padding: const EdgeInsets.symmetric(vertical: 12),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                        ),
-                                        icon: const Icon(Icons.add_photo_alternate, size: 20),
-                                        label: const Text('Add Images', style: TextStyle(fontSize: 14)),
-                                      ),
-                                      const SizedBox(height: 16),
-                                    ],
-                                  )
-                                : Text(descCtrl.text, style: const TextStyle(color: Colors.white70)),
-                            const SizedBox(height: 16),
-                            (_existingImageUrls.isNotEmpty || _selectedImages.isNotEmpty)
-                                ? Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      if (_existingImageUrls.isNotEmpty) ...[
-                                        const Text('', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                        const SizedBox(height: 8),
-                                        GridView.builder(
-                                          itemCount: _existingImageUrls.length,
-                                          shrinkWrap: true,
-                                          physics: const NeverScrollableScrollPhysics(),
-                                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                            crossAxisCount: 2,
-                                            mainAxisSpacing: 12,
-                                            crossAxisSpacing: 12,
-                                            childAspectRatio: 0.75,
-                                          ),
-                                          itemBuilder: (context, index) {
-                                            return Stack(
-                                              children: [
-                                                ClipRRect(
-                                                  borderRadius: BorderRadius.circular(12),
-                                                  child: Image.network(
-                                                    _existingImageUrls[index],
-                                                    fit: BoxFit.cover,
-                                                    width: double.infinity,
-                                                    height: double.infinity,
-                                                    loadingBuilder: (context, child, loadingProgress) {
-                                                      if (loadingProgress == null) return child;
-                                                      return const Center(child: CircularProgressIndicator());
-                                                    },
-                                                    errorBuilder: (context, error, stackTrace) {
-                                                      return Container(
-                                                        color: Colors.grey[800],
-                                                        child: const Center(
-                                                          child: Icon(Icons.error, color: Colors.white54),
-                                                        ),
-                                                      );
-                                                    },
-                                                  ),
-                                                ),
-                                                if (editable)
-                                                  Positioned(
-                                                    top: 4,
-                                                    right: 4,
-                                                    child: GestureDetector(
-                                                      onTap: () => _removeExistingImage(index),
-                                                      child: Container(
-                                                        padding: const EdgeInsets.all(4),
-                                                        decoration: const BoxDecoration(
-                                                          color: Colors.black54,
-                                                          shape: BoxShape.circle,
-                                                        ),
-                                                        child: const Icon(Icons.close, size: 16, color: Colors.white),
-                                                      ),
-                                                    ),
-                                                  ),
-                                              ],
-                                            );
-                                          },
-                                        ),
-                                        const SizedBox(height: 16),
-                                      ],
-                                      if (_selectedImages.isNotEmpty) ...[
-                                        const Text('New Images (not uploaded yet)', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                        const SizedBox(height: 8),
-                                        GridView.builder(
-                                          itemCount: _selectedImages.length,
-                                          shrinkWrap: true,
-                                          physics: const NeverScrollableScrollPhysics(),
-                                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                            crossAxisCount: 2,
-                                            mainAxisSpacing: 12,
-                                            crossAxisSpacing: 12,
-                                            childAspectRatio: 0.75,
-                                          ),
-                                          itemBuilder: (context, index) {
-                                            return Stack(
-                                              children: [
-                                                ClipRRect(
-                                                  borderRadius: BorderRadius.circular(12),
-                                                  child: Image.file(
-                                                    _selectedImages[index],
-                                                    fit: BoxFit.cover,
-                                                    width: double.infinity,
-                                                    height: double.infinity,
-                                                  ),
-                                                ),
-                                                if (editable)
-                                                  Positioned(
-                                                    top: 4,
-                                                    right: 4,
-                                                    child: GestureDetector(
-                                                      onTap: () => _removeImage(index),
-                                                      child: Container(
-                                                        padding: const EdgeInsets.all(4),
-                                                        decoration: const BoxDecoration(
-                                                          color: Colors.black54,
-                                                          shape: BoxShape.circle,
-                                                        ),
-                                                        child: const Icon(Icons.close, size: 16, color: Colors.white),
-                                                      ),
-                                                    ),
-                                                  ),
-                                              ],
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ],
-                                  )
-                                : Container(
-                                    padding: const EdgeInsets.symmetric(vertical: 24),
-                                    child: Center(
-                                      child: Text(
-                                        'No images added yet',
-                                        style: TextStyle(
-                                          color: Colors.white.withOpacity(0.5),
-                                          fontStyle: FontStyle.italic,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                          ],
-                        ),
+    final items = _filtered();
+    return Scaffold(
+      appBar: AppBar(toolbarHeight: 0),
+      body: RefreshIndicator(
+        onRefresh: _fetch,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverSafeArea(
+              bottom: false,
+              sliver: SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 8, 0),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text('Journal', style: context.tt.headlineMedium)),
+                      IconButton(
+                        tooltip: 'Pick a date',
+                        icon: const Icon(Icons.calendar_month_rounded),
+                        onPressed: _pickDate,
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
+            SliverToBoxAdapter(child: _searchField()),
+            if (_query.isEmpty) SliverToBoxAdapter(child: _weekStrip()),
+            SliverToBoxAdapter(child: _sectionHeader(items.length)),
+            if (_loading)
+              SliverToBoxAdapter(child: _skeleton())
+            else if (_error != null)
+              SliverToBoxAdapter(
+                child: EmptyState(
+                  icon: Icons.cloud_off_rounded,
+                  title: 'Couldn\'t load your journal',
+                  message: _error,
+                  actionLabel: 'Try again',
+                  onAction: _fetch,
+                ),
+              )
+            else if (items.isEmpty)
+              SliverToBoxAdapter(child: _empty())
+            else
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverToBoxAdapter(child: _masonry(items)),
+              ),
+            SliverToBoxAdapter(child: SizedBox(height: MediaQuery.paddingOf(context).bottom + 24)),
+          ],
         ),
       ),
     );
   }
-  
-  // Local helpers to keep the modal self-contained
-  InputDecoration _dec(String label) => InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(color: Colors.white70),
-        filled: true,
-        fillColor: const Color(0xFF2B2B2B),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Colors.white24),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Colors.white60),
-        ),
-      );
 
-  String _toTitleCase(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+  Widget _searchField() {
+    final cs = context.cs;
+    final pill = OutlineInputBorder(borderRadius: BorderRadius.circular(99), borderSide: BorderSide.none);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: TextField(
+        controller: _searchCtrl,
+        onChanged: (v) => setState(() => _query = v.trim()),
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: 'Search all entries',
+          prefixIcon: const Icon(Icons.search_rounded),
+          suffixIcon: _query.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: 'Clear search',
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => setState(() {
+                    _query = '';
+                    _searchCtrl.clear();
+                  }),
+                ),
+          fillColor: cs.surfaceContainerHigh,
+          border: pill,
+          enabledBorder: pill,
+          focusedBorder: pill,
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+      ),
+    );
+  }
+
+  Widget _weekStrip() {
+    final days = <String>{};
+    for (final m in _allCompleted) {
+      final d = _entryDate(m);
+      if (d != null) days.add(dayKey(d));
+    }
+    return WeekStrip(
+      selected: _selectedDate ?? DateTime.now(),
+      onSelected: _selectDate,
+      daysWithEntries: days,
+    );
+  }
+
+  Widget _sectionHeader(int count) {
+    final cs = context.cs;
+    final String title;
+    if (_query.isNotEmpty) {
+      title = 'Results';
+    } else if (_selectedDate == null) {
+      title = "Today's entries";
+    } else {
+      title = formatDayLong(_selectedDate!);
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 12, 8),
+      child: Row(
+        children: [
+          Expanded(child: Text(title, style: context.tt.titleLarge)),
+          if (!_loading)
+            Text(
+              '$count ${count == 1 ? 'entry' : 'entries'}',
+              style: context.tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+            ),
+          if (_selectedDate != null && _query.isEmpty)
+            TextButton(onPressed: () => _selectDate(null), child: const Text('Today')),
+        ],
+      ),
+    );
+  }
+
+  Widget _empty() {
+    if (_query.isNotEmpty) {
+      return const EmptyState(
+        icon: Icons.search_off_rounded,
+        title: 'No matches',
+        message: 'Try a different word, category or date (e.g. 10/27/2026).',
+      );
+    }
+    if (_selectedDate != null) {
+      return const EmptyState(
+        icon: Icons.event_busy_rounded,
+        title: 'Nothing journaled this day',
+        message: 'Completed tasks show up here on the day you finish them.',
+      );
+    }
+    return const EmptyState(
+      icon: Icons.auto_stories_outlined,
+      title: 'Your journal starts here',
+      message: 'Complete a task on the Clock and it will appear here, ready for photos and notes.',
+    );
+  }
+
+  Widget _masonry(List<Map<String, dynamic>> items) {
+    final left = <Widget>[];
+    final right = <Widget>[];
+    for (var i = 0; i < items.length; i++) {
+      final card = Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: _JournalCard(data: items[i], onTap: () => _openEntry(items[i])),
+      );
+      (i.isEven ? left : right).add(card);
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: Column(children: left)),
+        const SizedBox(width: 12),
+        Expanded(child: Column(children: right)),
+      ],
+    );
+  }
+
+  Widget _skeleton() {
+    Widget col(List<double> heights) => Expanded(
+          child: Column(
+            children: [
+              for (final h in heights)
+                Padding(padding: const EdgeInsets.only(bottom: 12), child: SkeletonBox(height: h, radius: AppRadius.lg)),
+            ],
+          ),
+        );
+    return Shimmer(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [col([220, 140]), const SizedBox(width: 12), col([150, 210])],
+        ),
+      ),
+    );
+  }
+}
+
+class _JournalCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+  final VoidCallback onTap;
+  const _JournalCard({required this.data, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = context.cs;
+    final title = (data['taskTitle'] ?? '').toString();
+    final category = (data['category'] ?? '').toString();
+    final description = (data['description'] ?? '').toString();
+    final images = data['images'] is List ? (data['images'] as List).map((e) => e.toString()).toList() : <String>[];
+    final isPublic = data['setPublic'] == true;
+
+    return Material(
+      color: cs.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.lg - 4),
+        side: BorderSide(color: cs.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (images.isNotEmpty)
+              AspectRatio(
+                aspectRatio: 4 / 5,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    NetworkPhoto(url: images.first),
+                    if (images.length > 1)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.photo_library_outlined, size: 12, color: Colors.white),
+                              const SizedBox(width: 3),
+                              Text('${images.length}', style: context.tt.labelSmall?.copyWith(color: Colors.white)),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(child: CategoryChip(category: category, dense: true)),
+                      const Spacer(),
+                      if (isPublic)
+                        Tooltip(
+                          message: 'On the feed',
+                          child: Icon(Icons.public_rounded, size: 16, color: cs.onSurfaceVariant),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: context.tt.titleMedium),
+                  const SizedBox(height: 2),
+                  Text(
+                    formatTimeRange((data['timeRange'] ?? '').toString(), use24h: use24hOf(context)),
+                    style: context.tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                  if (description.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      description,
+                      maxLines: images.isNotEmpty ? 2 : 5,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.tt.bodySmall,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
